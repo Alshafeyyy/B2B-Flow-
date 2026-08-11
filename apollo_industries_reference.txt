@@ -1,0 +1,117 @@
+# Apollo.io organization "industry" field — real values observed via live API queries
+# Collected 2026-08-11 across ~1,150 companies (broad + targeted keyword probes). Not guaranteed exhaustive.
+# Use these exact strings (case-insensitive match applied in code) with the new --industries filter.
+
+accounting
+airlines/aviation
+apparel & fashion
+architecture & planning
+automotive
+aviation & aerospace
+banking
+biotechnology
+building materials
+chemicals
+civic & social organization
+civil engineering
+computer & network security
+computer games
+computer hardware
+computer networking
+construction
+consumer goods
+consumer services
+cosmetics
+dairy
+defense & space
+design
+e-learning
+education management
+electrical/electronic manufacturing
+entertainment
+environmental services
+executive office
+facilities services
+farming
+financial services
+food & beverages
+food production
+furniture
+glass, ceramics & concrete
+government administration
+government relations
+graphic design
+health, wellness & fitness
+higher education
+hospital & health care
+hospitality
+human resources
+import & export
+individual & family services
+information services
+information technology & services
+insurance
+international affairs
+international trade & development
+internet
+investment banking
+investment management
+law enforcement
+law practice
+legal services
+leisure, travel & tourism
+libraries
+logistics & supply chain
+luxury goods & jewelry
+machinery
+management consulting
+maritime
+market research
+marketing & advertising
+mechanical or industrial engineering
+media production
+medical devices
+mental health care
+military
+mining & metals
+music
+newspapers
+nonprofit organization management
+oil & energy
+online media
+outsourcing/offshoring
+package/freight delivery
+packaging & containers
+paper & forest products
+pharmaceuticals
+photography
+plastics
+primary/secondary education
+printing
+professional training & coaching
+public policy
+public relations & communications
+publishing
+real estate
+religious institutions
+renewables & environment
+research
+restaurants
+retail
+security & investigations
+semiconductors
+shipbuilding
+sporting goods
+sports
+staffing & recruiting
+telecommunications
+textiles
+transportation/trucking/railroad
+utilities
+venture capital & private equity
+veterinary
+warehousing
+wholesale
+wine & spirits
+wireless
+writing & editing

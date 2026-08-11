@@ -1,0 +1,10 @@
+.env
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.DS_Store
+.claude/
+
+# Generated pipeline outputs and local test runs
+*.xlsx
+*.log
