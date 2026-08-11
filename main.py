@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument("--revenue-min", type=int, default=None, help="Minimum annual revenue (USD), e.g. --revenue-min 1000000")
     parser.add_argument("--revenue-max", type=int, default=None, help="Maximum annual revenue (USD), e.g. --revenue-max 50000000")
     parser.add_argument("--hiring-for", nargs="+", default=None, help="Only include companies currently hiring for these roles, e.g. --hiring-for \"data analyst\" \"AI engineer\" — a strong buying-intent signal for digital/AI/data offerings.")
+    parser.add_argument("--exclude", nargs="+", default=None, help="Company names to skip during sourcing, e.g. --exclude \"Maroc Telecom\" Sothema — useful to avoid re-surfacing companies from a previous run.")
     parser.add_argument("--limit", type=int, default=DEFAULT_COMPANY_LIMIT, help="Number of 'Go'-qualified companies to find (default: 50) — Apollo is scanned as deep as needed (up to 5x this number) to reach it")
     parser.add_argument("--output", type=str, default=None, help="Output Excel filename (default: auto-named from industry + limit)")
     return parser.parse_args()
@@ -48,6 +49,7 @@ def main():
             output_path=output_path,
             revenue_range=revenue_range,
             hiring_for=args.hiring_for,
+            exclude_companies=args.exclude,
             on_progress=lambda msg: print(f"\n{msg}")
         )
     except RuntimeError as e:

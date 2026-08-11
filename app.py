@@ -90,6 +90,12 @@ with st.form("prospecting_form"):
             help="Comma-separated roles, e.g. \"data analyst, AI engineer\". Companies hiring for these roles "
                  "signal active investment in exactly what we sell — a sharper buying signal than industry/size alone."
         )
+        exclude_input = st.text_area(
+            "Exclude companies",
+            value="",
+            help="One per line or comma-separated, e.g. companies from a previous run you don't want to see again. "
+                 "Matches by name (not exact — \"Maroc Telecom\" will also skip \"Maroc Telecom S.A.\")."
+        )
 
     submitted = st.form_submit_button("Run Pipeline", type="primary")
 
@@ -111,6 +117,7 @@ if submitted:
         if revenue_max_input:
             revenue_range["max"] = int(revenue_max_input)
     hiring_for = [h.strip() for h in hiring_for_input.split(",") if h.strip()] or None
+    exclude_companies = [e.strip() for e in exclude_input.replace(",", "\n").splitlines() if e.strip()] or None
 
     log_lines = []
     with st.status("Running pipeline...", expanded=True) as status:
@@ -128,6 +135,7 @@ if submitted:
                 output_path=default_output_filename(industries, keywords, int(limit)),
                 revenue_range=revenue_range,
                 hiring_for=hiring_for,
+                exclude_companies=exclude_companies,
                 on_progress=on_progress
             )
         except Exception as e:

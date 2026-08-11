@@ -37,6 +37,7 @@ def run_pipeline(
     output_path: str,
     revenue_range: Optional[Dict[str, int]] = None,
     hiring_for: Optional[List[str]] = None,
+    exclude_companies: Optional[List[str]] = None,
     on_progress: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
     """
@@ -84,6 +85,10 @@ def run_pipeline(
     if industries:
         progress(f"   🎯 Strict industry filter active: {', '.join(industries)}")
 
+    excluded_names = [e.strip().lower() for e in exclude_companies if e.strip()] if exclude_companies else []
+    if excluded_names:
+        progress(f"   🚫 Excluding {len(excluded_names)} company name(s) already seen: {', '.join(excluded_names)}")
+
     go_companies = []
     scanned_count = 0
     seen_ids = set()
@@ -115,6 +120,12 @@ def run_pipeline(
             seen_ids.add(comp_id)
 
             if allowed_industries and (comp.get("industry") or "").strip().lower() not in allowed_industries:
+                continue
+
+            comp_name_lower = (comp.get("name") or "").strip().lower()
+            if excluded_names and comp_name_lower and any(
+                excl in comp_name_lower or comp_name_lower in excl for excl in excluded_names
+            ):
                 continue
 
             comp_name = comp.get("name", "Unknown Company")
