@@ -1,4 +1,6 @@
 import os
+import glob
+from datetime import datetime
 import streamlit as st
 
 # Must happen before importing config/pipeline: copy any matching Streamlit Cloud
@@ -15,6 +17,25 @@ st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", la
 
 st.title("🏢 ALX Enterprise B2B Prospecting")
 st.caption("Source companies, AI-qualify them, find decision-makers, and generate sales briefs — powered by Apollo + Perplexity.")
+
+# Recovery: the pipeline saves progress to disk after every company/contact, not
+# just at the end — so a run that dies partway (dropped connection, app restart,
+# an API error) still leaves a file with whatever was completed. Surface any of
+# those here so the credits already spent on them aren't lost.
+existing_files = sorted(glob.glob("prospects_*.xlsx"), key=os.path.getmtime, reverse=True)
+if existing_files:
+    with st.expander(f"📂 Previous run files on this server ({len(existing_files)})"):
+        st.caption("Includes runs that didn't finish — each file has everything completed up to the point it stopped.")
+        for path in existing_files:
+            saved_at = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            with open(path, "rb") as f:
+                st.download_button(
+                    f"⬇️ {os.path.basename(path)} (saved {saved_at})",
+                    data=f.read(),
+                    file_name=os.path.basename(path),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"recover_{path}"
+                )
 
 if not APOLLO_API_KEY or not PERPLEXITY_API_KEY:
     st.error(
@@ -81,11 +102,15 @@ if submitted:
                 industries=industries or None,
                 employee_ranges=employee_ranges,
                 limit=int(limit),
-                output_path=f"prospects_{'_'.join(locations)}.xlsx",
+                output_path=f"prospects_{'_'.join(locations)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 on_progress=on_progress
             )
-        except RuntimeError as e:
+        except Exception as e:
             status.update(label=f"Failed: {e}", state="error")
+            st.error(
+                "The run stopped before finishing, but everything completed up to that point "
+                "was already saved — reload this page and check **Previous run files** above."
+            )
             st.stop()
 
         status.update(label="Pipeline complete", state="complete")

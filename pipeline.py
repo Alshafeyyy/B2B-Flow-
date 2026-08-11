@@ -36,6 +36,19 @@ def run_pipeline(
         if on_progress:
             on_progress(msg)
 
+    companies_sheet_records: List[Dict[str, Any]] = []
+    contacts_briefs_records: List[Dict[str, Any]] = []
+
+    def checkpoint():
+        # Re-exports whatever has been produced so far to `output_path` after every
+        # company qualified / contact briefed. If the run dies partway (connection
+        # drop, app restart, API error), the credits already spent aren't wasted —
+        # the file on disk always reflects the latest completed work.
+        try:
+            export_pipeline_to_excel(companies_sheet_records, contacts_briefs_records, output_path)
+        except Exception as e:
+            logger.warning(f"Checkpoint save failed (continuing run): {e}")
+
     if not APOLLO_API_KEY:
         raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
     if not PERPLEXITY_API_KEY:
@@ -88,7 +101,6 @@ def run_pipeline(
 
     progress(f"✅ Found {len(raw_companies)} companies. Running AI qualification & role suggestions...")
 
-    companies_sheet_records = []
     go_companies = []
 
     for comp in tqdm(raw_companies, desc="Phase 1 - Qualifying Companies"):
@@ -124,6 +136,7 @@ def run_pipeline(
         }
 
         companies_sheet_records.append(record)
+        checkpoint()
 
         if status == "Go":
             go_companies.append({
@@ -137,8 +150,6 @@ def run_pipeline(
     # -------------------------------------------------------------------------
     # PHASE 2: Contact Search, People Enrichment & Pre-Call Briefing
     # -------------------------------------------------------------------------
-    contacts_briefs_records = []
-
     if go_companies:
         # ---- Phase 2a: Search contacts by AI-suggested role for each 'Go' company ----
         progress(f"👥 PHASE 2a: Searching contacts for {len(go_companies)} 'Go' companies...")
@@ -176,6 +187,7 @@ def run_pipeline(
                     "3. Target Company Brief": comp_record.get("Company Description", ""),
                     "4. Industry Position & Market Insights": f"Key player in {comp_record.get('Industry', 'Industry')}."
                 })
+                checkpoint()
                 continue
 
             for c in contacts:
@@ -232,6 +244,7 @@ def run_pipeline(
                 }
 
                 contacts_briefs_records.append(contact_entry)
+                checkpoint()
                 progress(f"   ✓ Brief {idx}/{len(enriched_contacts)}: {contact_name} ({comp_name})")
 
     # -------------------------------------------------------------------------
