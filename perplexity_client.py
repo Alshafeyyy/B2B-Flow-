@@ -47,13 +47,17 @@ TARGET COMPANY TO EVALUATE:
 - Description: {short_desc}
 
 TASK:
-1. Determine if this company is a good prospect for ALX Enterprise B2B corporate training (Go, No-Go, or Review) with a single-sentence reason.
-2. If Go or Review, suggest 3 to 5 ideal decision-maker job titles to target at this company (e.g., HR Director, Head of L&D, COO, Chief Digital Officer, CTO, Head of Transformation).
+1. Assess this company against the ORGANIZATIONAL SIGNALS listed in OUR OFFERING above. Look for genuine public evidence (news, described initiatives, hiring patterns, stated strategy) of 2+ of those signals — not assumptions based on size or industry alone. Classify as:
+   - "Go": clear public evidence of 2+ signals, or one strong signal (e.g. an explicit AI/digital transformation initiative) at a company large enough to plausibly have a structured HR/L&D function.
+   - "Review": plausible fit (right size/sector, no disqualifying evidence) but not enough public evidence either way to be confident — needs human judgment.
+   - "No-Go": clear evidence this isn't a fit (e.g. too small to plausibly have any L&D function, or no credible connection to the signals).
+   Do not default to Go purely because the company is large or in banking/tech; do not default to No-Go purely because it's a "traditional" sector. Give a single-sentence reason that names the SPECIFIC signal(s) found or missing — not a generic statement.
+2. Suggest 3 to 5 ideal target job FUNCTIONS to reach out to, chosen from what's actually relevant given which signal(s) you found — use the workshop audiences in OUR OFFERING as a guide (e.g. an AI-governance-gap signal → transformation/digital leadership roles; a manager-readiness signal → HR/L&D and frontline management roles; a productivity/retention signal → HR and operations leadership; a decision-making signal → senior functional/financial leadership).
 
 Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no extra text):
 {{
   "status": "Go" | "No-Go" | "Review",
-  "reason": "Single short sentence explaining why.",
+  "reason": "Single short sentence naming the specific signal(s) found or missing.",
   "suggested_roles": ["Title 1", "Title 2", "Title 3"]
 }}"""
 
@@ -136,7 +140,7 @@ REAL ROSTER OF PEOPLE APOLLO HAS ON FILE AT THIS COMPANY (first name + job title
 {roster_text}
 
 TASK:
-Select up to {max_selections} people from this REAL roster who are the best targets for our offering. Prioritize genuine decision-makers and functional fits. Only select from the numbered roster above — do not invent people or renumber them. If fewer than {max_selections} are good fits, select fewer.
+Select up to {max_selections} people from this REAL roster who are the best targets for our offering. Match each person's real title to the workshop audiences and buyer personas described in OUR OFFERING (e.g. a Director of Operations or functional exec is a "Karim"-type budget-holder worth prioritizing; an HR/L&D lead is a likely programme owner; a Digital/Transformation lead fits the AI Strategic Roadmap audience; a frontline manager fits Lead & Manage in the Age of AI). Prioritize genuine decision-makers and functional fits over generic seniority. Only select from the numbered roster above — do not invent people or renumber them. If fewer than {max_selections} are good fits, select fewer.
 
 Respond strictly with valid JSON (no markdown code blocks, no extra text):
 {{
@@ -226,11 +230,13 @@ TARGET COMPANY DETAILS:
 
 Perform public web research on this contact and company to produce 4 detailed, high-value sales briefing sections.
 
+For the opening_sales_angle specifically: first judge whether this contact is closer to the "Karim" archetype (senior operational/functional executive — lead with efficiency/ROI, fast measurable payback, skip generic upskilling language) or the "Youssef" archetype (functional specialist/individual contributor — lead with practical skill-building and career growth) from OUR OFFERING above, and write the angle in that register. Name the SPECIFIC relevant offering (e.g. the "AI Strategic Roadmap" workshop, the "Decision Intelligence" workshop, or the Academy) rather than generic "training", and cite one real proof point (a stat or named client reference from OUR OFFERING) rather than a generic claim.
+
 Respond strictly in valid JSON format with these 4 keys (no markdown code blocks, no extra text):
 {{
   "contact_insights": "Detailed information about the contact including their background, career experience, education, tenure at the company, and key role responsibilities.",
-  "opening_sales_angle": "A highly tailored, compelling opening pitch hook connecting ALX Enterprise AI/Data/Leadership programs directly to this contact's role and company challenges.",
-  "target_company_brief": "An internal brief on company scale, digital transformation initiatives, modernization pressures, and workforce training needs.",
+  "opening_sales_angle": "A highly tailored, persona-matched opening pitch hook naming a specific ALX offering and a real proof point, connecting directly to this contact's role and company's likely pain signal(s).",
+  "target_company_brief": "An internal brief on company scale, and which of the 8 organizational signals (from OUR OFFERING) this company shows evidence of, and the resulting workforce training needs.",
   "industry_position": "Analysis of current industry trends and where this company sits relative to competitors in digital and AI adoption."
 }}"""
 
