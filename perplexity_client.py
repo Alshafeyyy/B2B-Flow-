@@ -47,11 +47,11 @@ TARGET COMPANY TO EVALUATE:
 - Description: {short_desc}
 
 TASK:
-1. Assess this company against the ORGANIZATIONAL SIGNALS listed in OUR OFFERING above. Look for genuine public evidence (news, described initiatives, hiring patterns, stated strategy) of 2+ of those signals — not assumptions based on size or industry alone. Classify as:
-   - "Go": clear public evidence of 2+ signals, or one strong signal (e.g. an explicit AI/digital transformation initiative) at a company large enough to plausibly have a structured HR/L&D function.
-   - "Review": plausible fit (right size/sector, no disqualifying evidence) but not enough public evidence either way to be confident — needs human judgment.
-   - "No-Go": clear evidence this isn't a fit (e.g. too small to plausibly have any L&D function, or no credible connection to the signals).
-   Do not default to Go purely because the company is large or in banking/tech; do not default to No-Go purely because it's a "traditional" sector. Give a single-sentence reason that names the SPECIFIC signal(s) found or missing — not a generic statement.
+1. Assess this company's fit using BOTH company-specific evidence (news, initiatives, hiring patterns) AND sector-level evidence from the signal research in OUR OFFERING (e.g. the banking-wide AI/digital modernization pressure cited above applies to any genuine, established bank — you do not need a press release about that exact bank's internal programs to credit it). Classify as:
+   - "Go": the company is a real, established player (genuine headcount, genuine market presence — not a shell or single-location micro business) in a sector/segment where OUR OFFERING's signal research shows credible pressure, OR there's direct company-specific evidence of a signal. Sector-level evidence is sufficient on its own for an established company in a sector OUR OFFERING already flags (e.g. banking) — being unable to find a news article about THIS exact company is normal and NOT a reason to avoid Go.
+   - "Review": genuinely ambiguous — unclear/very small size, an obscure or mixed-signal sector not covered by OUR OFFERING's research, or conflicting evidence.
+   - "No-Go": clear evidence this isn't a fit (too small to plausibly have any structured L&D function, or a business type with no credible connection to any signal).
+   Do not default to Review just because company-specific news wasn't found — use sector-level evidence and company characteristics instead. Do not default to Go purely on size with zero sector/signal relevance; do not default to No-Go purely for being a "traditional" sector. Give a single-sentence reason naming the SPECIFIC signal or evidence used.
 2. Suggest 3 to 5 ideal target job FUNCTIONS to reach out to, chosen from what's actually relevant given which signal(s) you found — use the workshop audiences in OUR OFFERING as a guide (e.g. an AI-governance-gap signal → transformation/digital leadership roles; a manager-readiness signal → HR/L&D and frontline management roles; a productivity/retention signal → HR and operations leadership; a decision-making signal → senior functional/financial leadership).
 
 Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no extra text):
