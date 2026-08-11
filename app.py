@@ -139,5 +139,5 @@ if submitted:
 
         st.dataframe(
             [{"Company": c["Company Name"], "Status": c["AI Status"], "Industry": c["Industry"]} for c in companies],
-            use_container_width=True
+            width="stretch"
         )
