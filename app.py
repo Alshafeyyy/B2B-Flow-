@@ -11,7 +11,7 @@ for _key in ("APOLLO_API_KEY", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "OFFERI
         os.environ[_key] = str(st.secrets[_key])
 
 from config import APOLLO_API_KEY, PERPLEXITY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
-from pipeline import run_pipeline
+from pipeline import run_pipeline, default_output_filename
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", layout="centered")
 
@@ -22,7 +22,7 @@ st.caption("Source companies, AI-qualify them, find decision-makers, and generat
 # just at the end — so a run that dies partway (dropped connection, app restart,
 # an API error) still leaves a file with whatever was completed. Surface any of
 # those here so the credits already spent on them aren't lost.
-existing_files = sorted(glob.glob("prospects_*.xlsx"), key=os.path.getmtime, reverse=True)
+existing_files = sorted(glob.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
 if existing_files:
     with st.expander(f"📂 Previous run files on this server ({len(existing_files)})"):
         st.caption("Includes runs that didn't finish — each file has everything completed up to the point it stopped.")
@@ -74,8 +74,10 @@ with st.form("prospecting_form"):
         default=[EMPLOYEE_RANGE_LABELS[r] for r in DEFAULT_EMPLOYEE_RANGES]
     )
     limit = st.number_input(
-        "Number of companies to source", min_value=1, max_value=50, value=10, step=1,
-        help="Each company spends Apollo + Perplexity credits — keep this modest."
+        "Number of 'Go' companies wanted", min_value=1, max_value=20, value=5, step=1,
+        help="This is the target Go count, not raw companies scanned — Apollo will be searched as deep as "
+             "needed (up to 5x this number of candidates) to find that many qualified companies. "
+             "Each candidate scanned spends Apollo + Perplexity credits, so worst-case cost scales with this too."
     )
     submitted = st.form_submit_button("Run Pipeline", type="primary")
 
@@ -102,7 +104,7 @@ if submitted:
                 industries=industries or None,
                 employee_ranges=employee_ranges,
                 limit=int(limit),
-                output_path=f"prospects_{'_'.join(locations)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                output_path=default_output_filename(industries, keywords, int(limit)),
                 on_progress=on_progress
             )
         except Exception as e:

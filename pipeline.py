@@ -1,4 +1,6 @@
 import logging
+import re
+from datetime import datetime
 from typing import Callable, Dict, List, Optional, Any
 
 from tqdm import tqdm
@@ -16,6 +18,14 @@ from exporter import export_pipeline_to_excel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ALXPipeline")
+
+
+def default_output_filename(industries: Optional[List[str]], keywords: List[str], go_target: int) -> str:
+    """Builds a filename that says what's actually in it, e.g. pharmaceuticals_5go_20260811_1630.xlsx."""
+    label_source = industries or keywords or ["all_industries"]
+    slug = "_".join(re.sub(r"[^a-z0-9]+", "-", i.lower()).strip("-") for i in label_source[:3])
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return f"{slug}_{go_target}go_{timestamp}.xlsx"
 
 
 def run_pipeline(
@@ -60,92 +70,103 @@ def run_pipeline(
     # -------------------------------------------------------------------------
     # PHASE 1: Company Sourcing & AI Qualification
     # -------------------------------------------------------------------------
-    progress(f"🏢 PHASE 1: Sourcing {limit} companies in {locations} (Size 50+)...")
+    # `limit` is the target number of 'Go' companies, not raw companies fetched.
+    # Apollo is paginated and each candidate is AI-qualified as it's found, until
+    # `limit` Go companies are collected or the scan budget (5x the target, to
+    # keep worst-case Perplexity cost bounded) is exhausted. Every company scanned
+    # — Go or not — still lands in the Company Qualification sheet as an audit trail.
+    scan_cap = limit * 5
+    progress(f"🏢 PHASE 1: Sourcing companies in {locations} until {limit} are marked 'Go' (scanning up to {scan_cap} candidates)...")
 
-    if not industries:
-        raw_companies = apollo.search_organizations(
+    allowed_industries = {i.strip().lower() for i in industries} if industries else None
+    if industries:
+        progress(f"   🎯 Strict industry filter active: {', '.join(industries)}")
+
+    go_companies = []
+    scanned_count = 0
+    seen_ids = set()
+    page = 1
+    max_pages = 20
+
+    progress_bar = tqdm(total=scan_cap, desc="Phase 1 - Qualifying Companies")
+    while len(go_companies) < limit and scanned_count < scan_cap and page <= max_pages:
+        batch = apollo.search_organizations(
             locations=locations,
             keywords=keywords,
             employee_ranges=employee_ranges,
-            page=1,
-            per_page=limit
+            page=page,
+            per_page=100
         )
-    else:
-        # Strict client-side filter on Apollo's clean 'industry' field (vs. the loose
-        # keyword-tag match in `keywords`). Paginates through results until it finds
-        # `limit` matching companies or hits the page safety cap.
-        progress(f"   🎯 Strict industry filter active: {', '.join(industries)}")
-        allowed_industries = {i.strip().lower() for i in industries}
-        raw_companies = []
-        page = 1
-        max_pages = 10
-        while len(raw_companies) < limit and page <= max_pages:
-            batch = apollo.search_organizations(
-                locations=locations,
-                keywords=keywords,
-                employee_ranges=employee_ranges,
-                page=page,
-                per_page=100
-            )
-            if not batch:
-                break
-            raw_companies.extend(c for c in batch if (c.get("industry") or "").strip().lower() in allowed_industries)
-            page += 1
-        raw_companies = raw_companies[:limit]
-        progress(f"   Scanned {page - 1} page(s) of Apollo results to find {len(raw_companies)} industry-matching companies.")
+        page += 1
+        if not batch:
+            break
 
-    if not raw_companies:
+        for comp in batch:
+            if len(go_companies) >= limit or scanned_count >= scan_cap:
+                break
+
+            comp_id = comp.get("id") or comp.get("organization_id") or comp.get("primary_domain") or comp.get("name")
+            if comp_id in seen_ids:
+                continue
+            seen_ids.add(comp_id)
+
+            if allowed_industries and (comp.get("industry") or "").strip().lower() not in allowed_industries:
+                continue
+
+            comp_name = comp.get("name", "Unknown Company")
+            domain = comp.get("primary_domain") or comp.get("domain", "")
+            industry = comp.get("industry", "Unknown")
+            employees = comp.get("estimated_num_employees", comp.get("num_employees", "Unknown"))
+            city = comp.get("city", "")
+            country = comp.get("country", "")
+            location = f"{city}, {country}".strip(", ") or "Morocco"
+            website = comp.get("website_url", f"https://{domain}" if domain else "")
+            short_desc = comp.get("short_description", "")
+
+            # AI Qualification & Target Role Suggestions
+            ai_res = perplexity.qualify_company_and_suggest_roles(comp, OFFERING_DESCRIPTION)
+            status = ai_res.get("status", "Review")
+            reason = ai_res.get("reason", "")
+            suggested_roles = ai_res.get("suggested_roles", DEFAULT_CONTACT_TITLES)
+            suggested_roles_str = ", ".join(suggested_roles) if isinstance(suggested_roles, list) else str(suggested_roles)
+
+            record = {
+                "Company Name": comp_name,
+                "Domain": domain,
+                "Industry": industry,
+                "Employees": employees,
+                "Location": location,
+                "Website": website,
+                "Company Description": short_desc,
+                "AI Status": status,
+                "AI Reason": reason,
+                "AI Suggested Target Roles": suggested_roles_str
+            }
+
+            companies_sheet_records.append(record)
+            checkpoint()
+            scanned_count += 1
+            progress_bar.update(1)
+
+            if status == "Go":
+                go_companies.append({
+                    "raw": comp,
+                    "record": record,
+                    "suggested_roles": suggested_roles if isinstance(suggested_roles, list) else DEFAULT_CONTACT_TITLES
+                })
+                progress(f"   ✅ Go {len(go_companies)}/{limit}: {comp_name}")
+
+    progress_bar.close()
+
+    if not companies_sheet_records:
         logger.warning("No companies returned from Apollo. Exiting pipeline.")
         progress("⚠️ No companies returned from Apollo for these filters.")
         return {"output_path": None, "companies": [], "contacts": [], "go_count": 0}
 
-    progress(f"✅ Found {len(raw_companies)} companies. Running AI qualification & role suggestions...")
-
-    go_companies = []
-
-    for comp in tqdm(raw_companies, desc="Phase 1 - Qualifying Companies"):
-        comp_id = comp.get("id") or comp.get("organization_id")
-        comp_name = comp.get("name", "Unknown Company")
-        domain = comp.get("primary_domain") or comp.get("domain", "")
-        industry = comp.get("industry", "Unknown")
-        employees = comp.get("estimated_num_employees", comp.get("num_employees", "Unknown"))
-        city = comp.get("city", "")
-        country = comp.get("country", "")
-        location = f"{city}, {country}".strip(", ") or "Morocco"
-        website = comp.get("website_url", f"https://{domain}" if domain else "")
-        short_desc = comp.get("short_description", "")
-
-        # AI Qualification & Target Role Suggestions
-        ai_res = perplexity.qualify_company_and_suggest_roles(comp, OFFERING_DESCRIPTION)
-        status = ai_res.get("status", "Review")
-        reason = ai_res.get("reason", "")
-        suggested_roles = ai_res.get("suggested_roles", DEFAULT_CONTACT_TITLES)
-        suggested_roles_str = ", ".join(suggested_roles) if isinstance(suggested_roles, list) else str(suggested_roles)
-
-        record = {
-            "Company Name": comp_name,
-            "Domain": domain,
-            "Industry": industry,
-            "Employees": employees,
-            "Location": location,
-            "Website": website,
-            "Company Description": short_desc,
-            "AI Status": status,
-            "AI Reason": reason,
-            "AI Suggested Target Roles": suggested_roles_str
-        }
-
-        companies_sheet_records.append(record)
-        checkpoint()
-
-        if status == "Go":
-            go_companies.append({
-                "raw": comp,
-                "record": record,
-                "suggested_roles": suggested_roles if isinstance(suggested_roles, list) else DEFAULT_CONTACT_TITLES
-            })
-
-    progress(f"📊 Phase 1 Complete: {len(go_companies)} / {len(companies_sheet_records)} marked as 'Go'.")
+    if len(go_companies) < limit:
+        progress(f"⚠️ Phase 1 Complete: only {len(go_companies)}/{limit} 'Go' companies found after scanning {scanned_count} candidates — Apollo/AI supply may be exhausted for these filters.")
+    else:
+        progress(f"📊 Phase 1 Complete: {len(go_companies)}/{limit} 'Go' companies found after scanning {scanned_count} candidates.")
 
     # -------------------------------------------------------------------------
     # PHASE 2: Contact Search, People Enrichment & Pre-Call Briefing
