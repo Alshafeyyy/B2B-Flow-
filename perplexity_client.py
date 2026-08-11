@@ -97,6 +97,94 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
                 "suggested_roles": ["Human Resources Director", "Head of L&D", "COO", "Chief Digital Officer", "CTO"]
             }
 
+    def select_best_contacts(
+        self,
+        company: Dict[str, Any],
+        candidates: List[Dict[str, Any]],
+        offering_context: str,
+        suggested_roles: List[str] = None,
+        max_selections: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Phase 2a AI Selection: Given the company's real contact roster (first name +
+        job title only — nobody was pre-filtered by title, since Apollo's title match
+        is fairly literal and misses real people whose title differs from AI-guessed
+        phrasing), selects the best-fit people to reach out to. Returns the selected
+        subset of `candidates`, each tagged with `_selection_reason`.
+        """
+        name = company.get("name", "Unknown Company")
+        industry = company.get("industry", "Unknown")
+
+        roster_text = "\n".join(
+            f"{i}. {c.get('first_name') or 'Unknown'} — {c.get('title') or 'Unknown Title'}"
+            for i, c in enumerate(candidates)
+        )
+        roles_hint = ", ".join(suggested_roles) if suggested_roles else \
+            "HR, Learning & Development, Digital/IT, Operations/Transformation, executive leadership"
+
+        prompt = f"""You are a B2B sales targeting AI for ALX Enterprise Morocco.
+
+OUR OFFERING:
+{offering_context}
+
+TARGET COMPANY: {name} ({industry})
+
+EARLIER ANALYSIS SUGGESTED THESE FUNCTIONAL AREAS AS GOOD FITS (use as guidance, not a strict filter — real titles rarely match this phrasing exactly):
+{roles_hint}
+
+REAL ROSTER OF PEOPLE APOLLO HAS ON FILE AT THIS COMPANY (first name + job title only, numbered):
+{roster_text}
+
+TASK:
+Select up to {max_selections} people from this REAL roster who are the best targets for our offering. Prioritize genuine decision-makers and functional fits. Only select from the numbered roster above — do not invent people or renumber them. If fewer than {max_selections} are good fits, select fewer.
+
+Respond strictly with valid JSON (no markdown code blocks, no extra text):
+{{
+  "selections": [
+    {{"index": <roster number>, "reason": "One short sentence on why this person is a good target."}}
+  ]
+}}"""
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are an analytical B2B sales targeting assistant. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2
+        }
+
+        try:
+            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
+
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(raw_text)
+            selections = result.get("selections", [])
+
+            picked = []
+            for sel in selections[:max_selections]:
+                idx = sel.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(candidates):
+                    picked.append({**candidates[idx], "_selection_reason": sel.get("reason", "")})
+
+            if not picked:
+                raise ValueError("AI returned no usable selections")
+            return picked
+
+        except Exception as e:
+            logger.error(f"Perplexity contact selection error for {name}: {e}")
+            # Fail-soft: take the first max_selections roster entries rather than
+            # losing this company's contacts entirely.
+            return [
+                {**c, "_selection_reason": "Selected by default (AI selection unavailable)."}
+                for c in candidates[:max_selections]
+            ]
+
     def generate_deep_contact_brief(
         self,
         contact: Dict[str, Any],

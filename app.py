@@ -79,6 +79,18 @@ with st.form("prospecting_form"):
              "needed (up to 5x this number of candidates) to find that many qualified companies. "
              "Each candidate scanned spends Apollo + Perplexity credits, so worst-case cost scales with this too."
     )
+
+    with st.expander("Advanced filters (optional)"):
+        rev_col1, rev_col2 = st.columns(2)
+        revenue_min_input = rev_col1.number_input("Min annual revenue (USD)", min_value=0, value=0, step=100_000)
+        revenue_max_input = rev_col2.number_input("Max annual revenue (USD)", min_value=0, value=0, step=100_000)
+        hiring_for_input = st.text_input(
+            "Only companies currently hiring for...",
+            value="",
+            help="Comma-separated roles, e.g. \"data analyst, AI engineer\". Companies hiring for these roles "
+                 "signal active investment in exactly what we sell — a sharper buying signal than industry/size alone."
+        )
+
     submitted = st.form_submit_button("Run Pipeline", type="primary")
 
 if submitted:
@@ -90,6 +102,15 @@ if submitted:
     if not locations:
         st.warning("Enter at least one country/location.")
         st.stop()
+
+    revenue_range = None
+    if revenue_min_input or revenue_max_input:
+        revenue_range = {}
+        if revenue_min_input:
+            revenue_range["min"] = int(revenue_min_input)
+        if revenue_max_input:
+            revenue_range["max"] = int(revenue_max_input)
+    hiring_for = [h.strip() for h in hiring_for_input.split(",") if h.strip()] or None
 
     log_lines = []
     with st.status("Running pipeline...", expanded=True) as status:
@@ -105,6 +126,8 @@ if submitted:
                 employee_ranges=employee_ranges,
                 limit=int(limit),
                 output_path=default_output_filename(industries, keywords, int(limit)),
+                revenue_range=revenue_range,
+                hiring_for=hiring_for,
                 on_progress=on_progress
             )
         except Exception as e:

@@ -35,6 +35,8 @@ def run_pipeline(
     employee_ranges: List[str],
     limit: int,
     output_path: str,
+    revenue_range: Optional[Dict[str, int]] = None,
+    hiring_for: Optional[List[str]] = None,
     on_progress: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
     """
@@ -94,6 +96,8 @@ def run_pipeline(
             locations=locations,
             keywords=keywords,
             employee_ranges=employee_ranges,
+            revenue_range=revenue_range,
+            job_titles=hiring_for,
             page=page,
             per_page=100
         )
@@ -172,28 +176,31 @@ def run_pipeline(
     # PHASE 2: Contact Search, People Enrichment & Pre-Call Briefing
     # -------------------------------------------------------------------------
     if go_companies:
-        # ---- Phase 2a: Search contacts by AI-suggested role for each 'Go' company ----
-        progress(f"👥 PHASE 2a: Searching contacts for {len(go_companies)} 'Go' companies...")
+        # ---- Phase 2a: Pull the real roster per 'Go' company, let AI pick the best fits ----
+        progress(f"👥 PHASE 2a: Finding & selecting contacts for {len(go_companies)} 'Go' companies...")
 
         all_contacts = []
 
-        for item in tqdm(go_companies, desc="Phase 2a - Searching Contacts"):
+        for item in tqdm(go_companies, desc="Phase 2a - Selecting Contacts"):
             comp_raw = item["raw"]
             comp_record = item["record"]
             comp_name = comp_record["Company Name"]
             comp_id = comp_raw.get("id") or comp_raw.get("organization_id")
             comp_domain = comp_record["Domain"]
-            target_roles = item["suggested_roles"] or DEFAULT_CONTACT_TITLES
+            suggested_roles = item["suggested_roles"] or DEFAULT_CONTACT_TITLES
 
-            contacts = apollo.search_contacts_by_company(
+            # No title/seniority filter here — Apollo's title matching is fairly
+            # literal and AI-guessed titles routinely miss real people. Instead,
+            # fetch the real roster (name + title only, no contact info) and let
+            # the AI pick the best-fit people from what's actually there.
+            roster = apollo.list_company_contacts(
                 organization_id=comp_id,
                 domain=comp_domain,
                 company_name=comp_name,
-                titles=target_roles,
-                per_page=5
+                per_page=100
             )
 
-            if not contacts:
+            if not roster:
                 logger.info(f"No contacts found for {comp_name}. Creating placeholder entry.")
                 contacts_briefs_records.append({
                     "Company Name": comp_name,
@@ -203,6 +210,7 @@ def run_pipeline(
                     "Phone Number": "N/A",
                     "LinkedIn URL": "N/A",
                     "Enrichment Status": "No Contacts Found",
+                    "Why This Contact": "",
                     "1. Contact Insights & Experience": "No decision maker contact retrieved from search.",
                     "2. Tailored Sales Angle": f"Target company {comp_name} for enterprise AI & Data transformation training.",
                     "3. Target Company Brief": comp_record.get("Company Description", ""),
@@ -211,7 +219,11 @@ def run_pipeline(
                 checkpoint()
                 continue
 
-            for c in contacts:
+            selected = perplexity.select_best_contacts(
+                comp_raw, roster, OFFERING_DESCRIPTION, suggested_roles, max_selections=5
+            )
+
+            for c in selected:
                 c["_source_company_item"] = item
                 all_contacts.append(c)
 
@@ -258,6 +270,7 @@ def run_pipeline(
                     "Phone Number": phone_str,
                     "LinkedIn URL": linkedin_url,
                     "Enrichment Status": "Enriched" if c.get("_enriched") else "Not Matched",
+                    "Why This Contact": c.get("_selection_reason", ""),
                     "1. Contact Insights & Experience": deep_brief.get("contact_insights", ""),
                     "2. Tailored Sales Angle": deep_brief.get("opening_sales_angle", ""),
                     "3. Target Company Brief": deep_brief.get("company_brief", ""),

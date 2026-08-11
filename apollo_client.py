@@ -5,15 +5,6 @@ from typing import List, Dict, Any, Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ApolloClient")
 
-# Words stripped from AI-suggested titles to derive broader search terms. Apollo's
-# person_titles match is fairly literal, so compound C-suite phrasing an AI suggests
-# (e.g. "Chief Human Resources Officer") often has zero exact hits at small/mid-size
-# companies even when relevant people exist under simpler titles ("HR Manager").
-_TITLE_BOILERPLATE_WORDS = {
-    "chief", "head", "director", "officer", "vp", "vice", "president",
-    "senior", "sr", "global", "group", "deputy", "of", "the", "and"
-}
-
 class ApolloClient:
     BASE_URL = "https://app.apollo.io/api/v1"
 
@@ -34,11 +25,15 @@ class ApolloClient:
         locations: Optional[List[str]] = None,
         keywords: Optional[List[str]] = None,
         employee_ranges: Optional[List[str]] = None,
+        revenue_range: Optional[Dict[str, int]] = None,
+        job_titles: Optional[List[str]] = None,
         page: int = 1,
         per_page: int = 50
     ) -> List[Dict[str, Any]]:
         """
-        Phase 1: Searches for organizations on Apollo based on country, industry keywords, and employee size.
+        Phase 1: Searches for organizations on Apollo based on country, industry keywords,
+        employee size, annual revenue, and (optionally) roles the company is currently
+        hiring for — a strong buying-intent signal for digital/data/AI-related offerings.
         """
         url = f"{self.BASE_URL}/organizations/search"
 
@@ -53,6 +48,10 @@ class ApolloClient:
             payload["q_organization_keyword_tags"] = keywords
         if employee_ranges:
             payload["organization_num_employees_ranges"] = employee_ranges
+        if revenue_range:
+            payload["revenue_range"] = revenue_range
+        if job_titles:
+            payload["q_organization_job_titles"] = job_titles
 
         try:
             logger.info(f"Querying Apollo Organization Search (limit={per_page}, locations={locations}, keywords={keywords})...")
@@ -74,101 +73,41 @@ class ApolloClient:
                 logger.error(f"Response status: {e.response.status_code}, Body: {e.response.text}")
             return []
 
-    def _broaden_titles(self, titles: List[str]) -> List[str]:
-        """
-        Strips seniority/boilerplate words from suggested titles (e.g. "Chief Human
-        Resources Officer" -> "Human Resources", "Head of Learning & Development" ->
-        "Learning Development") so the search still targets the right function even
-        when no one at the company literally holds the AI-suggested C-suite title.
-        """
-        broadened = set()
-        for t in titles or []:
-            words = t.replace("&", " and ").split()
-            core = [w for w in words if w.strip(",").lower() not in _TITLE_BOILERPLATE_WORDS]
-            if core:
-                broadened.add(" ".join(core))
-        return list(broadened)
-
-    def search_contacts_by_company(
+    def list_company_contacts(
         self,
         organization_id: Optional[str] = None,
         domain: Optional[str] = None,
         company_name: Optional[str] = None,
-        titles: Optional[List[str]] = None,
-        per_page: int = 5
+        per_page: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        Phase 2: Searches decision-maker contacts for a specific qualified 'Go' organization
-        using domain, organization ID, and title/seniority fallback strategies.
+        Phase 2a: Fetches the real contact roster for a company — first name + job
+        title only, no email/phone/last name (those require enrichment, see
+        bulk_enrich_people). Deliberately has no person_titles/seniority filter:
+        Apollo's title matching is fairly literal and AI-guessed titles routinely
+        miss real people, so instead the AI selects the best-fit people from this
+        real roster afterward (see PerplexityClient.select_best_contacts).
         """
         url = f"{self.BASE_URL}/mixed_people/api_search"
 
         payload_attempts = []
-        broadened_titles = self._broaden_titles(titles) if titles else []
-
-        # Attempt 1: Search by Domain + exact suggested Titles
         if domain:
-            p = {"page": 1, "per_page": per_page, "q_organization_domains": domain}
-            if titles: p["person_titles"] = titles
-            payload_attempts.append(p)
-
-        # Attempt 2: Search by Org ID + exact suggested Titles
+            payload_attempts.append({"page": 1, "per_page": per_page, "q_organization_domains": domain})
         if organization_id:
-            p = {"page": 1, "per_page": per_page, "organization_ids": [str(organization_id)]}
-            if titles: p["person_titles"] = titles
-            payload_attempts.append(p)
-
-        # Attempt 3: Search by Domain + broadened/simplified Titles (catches relevant
-        # people whose real title doesn't literally match the AI's C-suite phrasing)
-        if domain and broadened_titles:
-            payload_attempts.append({
-                "page": 1, "per_page": per_page,
-                "q_organization_domains": domain,
-                "person_titles": broadened_titles
-            })
-
-        # Attempt 4: Search by Org ID + broadened/simplified Titles
-        if organization_id and broadened_titles:
-            payload_attempts.append({
-                "page": 1, "per_page": per_page,
-                "organization_ids": [str(organization_id)],
-                "person_titles": broadened_titles
-            })
-
-        # Attempt 5: Search by Domain + Seniorities (C-suite, VP, Director) — title relevance dropped
-        if domain:
-            payload_attempts.append({
-                "page": 1, "per_page": per_page,
-                "q_organization_domains": domain,
-                "person_seniorities": ["c_suite", "vp", "director"]
-            })
-
-        # Attempt 6: Search by Domain without title/seniority restriction
-        if domain:
-            payload_attempts.append({
-                "page": 1, "per_page": per_page,
-                "q_organization_domains": domain
-            })
-
-        # Attempt 7: Search by Org ID without title restriction
-        if organization_id:
-            payload_attempts.append({
-                "page": 1, "per_page": per_page,
-                "organization_ids": [str(organization_id)]
-            })
+            payload_attempts.append({"page": 1, "per_page": per_page, "organization_ids": [str(organization_id)]})
 
         for i, payload in enumerate(payload_attempts, 1):
             try:
-                logger.info(f"Searching contacts for {company_name or domain or organization_id} (Attempt {i})...")
+                logger.info(f"Listing contacts for {company_name or domain or organization_id} (Attempt {i})...")
                 response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
                 if response.status_code == 200:
                     data = response.json()
                     people = data.get("people", []) or data.get("contacts", [])
                     if people:
-                        logger.info(f"Retrieved {len(people)} contacts for {company_name or domain} on Attempt {i}.")
+                        logger.info(f"Retrieved {len(people)} total contacts for {company_name or domain} on Attempt {i}.")
                         return people
             except Exception as e:
-                logger.error(f"Error querying contacts on Attempt {i}: {e}")
+                logger.error(f"Error listing contacts on Attempt {i}: {e}")
                 continue
 
         logger.warning(f"No contacts retrieved for {company_name or domain or organization_id} after all attempts.")
