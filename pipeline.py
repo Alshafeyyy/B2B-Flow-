@@ -28,6 +28,20 @@ def default_output_filename(industries: Optional[List[str]], keywords: List[str]
     return f"{slug}_{go_target}go_{timestamp}.xlsx"
 
 
+def search_company_candidates(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Account Deep-Dive: thin wrapper so app.py never has to instantiate ApolloClient
+    directly (keeps the app -> pipeline -> client layering consistent). Returns real
+    candidate companies for a possibly loose/abbreviated name, meant to be shown to
+    the user for confirmation before run_company_deep_dive spends any research
+    credits on the wrong company (e.g. "PMI" genuinely matches two real companies).
+    """
+    if not APOLLO_API_KEY:
+        raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    apollo = ApolloClient(api_key=APOLLO_API_KEY)
+    return apollo.find_company_candidates(query, limit=limit)
+
+
 def run_pipeline(
     locations: List[str],
     keywords: List[str],

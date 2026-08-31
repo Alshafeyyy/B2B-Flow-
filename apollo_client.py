@@ -73,6 +73,29 @@ class ApolloClient:
                 logger.error(f"Response status: {e.response.status_code}, Body: {e.response.text}")
             return []
 
+    def find_company_candidates(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Account Deep-Dive: returns a short list of real candidate companies matching
+        a possibly loose or abbreviated name — e.g. "PMI" genuinely matches both
+        "Project Management Institute" and "Philip Morris International". Confirmed
+        live: enrich_company("PMI") silently returns the wrong one with no warning,
+        so the UI should show these candidates for the user to confirm before
+        spending research credits, rather than trusting a single guessed match.
+        """
+        url = f"{self.BASE_URL}/organizations/search"
+        payload = {"page": 1, "per_page": limit, "q_organization_name": query}
+        try:
+            logger.info(f"Searching company candidates for '{query}'...")
+            response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            candidates = data.get("organizations", []) or data.get("accounts", [])
+            logger.info(f"Found {len(candidates)} candidate(s) for '{query}'.")
+            return candidates
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error searching company candidates for '{query}': {e}")
+            return []
+
     def enrich_company(self, identifier: str) -> Optional[Dict[str, Any]]:
         """
         Account Deep-Dive: looks up ONE specific, known company by name or domain

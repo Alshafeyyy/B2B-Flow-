@@ -11,7 +11,7 @@ for _key in ("APOLLO_API_KEY", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "OFFERI
         os.environ[_key] = str(st.secrets[_key])
 
 from config import APOLLO_API_KEY, PERPLEXITY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
-from pipeline import run_pipeline, run_company_deep_dive, default_output_filename
+from pipeline import run_pipeline, run_company_deep_dive, search_company_candidates, default_output_filename
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", layout="centered")
 
@@ -198,61 +198,86 @@ else:
         "a persona-matched opening angle). Scoped to public professional information only."
     )
 
-    with st.form("deep_dive_form"):
-        company_query = st.text_input(
-            "Company name",
-            value="",
-            help="Exact or close company name, e.g. \"Sothema\" or \"CIH Bank\". A domain also works, e.g. \"sothema.ma\"."
-        )
-        deep_dive_submitted = st.form_submit_button("Research This Company", type="primary")
+    # Two steps on purpose: a loose name can genuinely match more than one real
+    # company (e.g. "PMI" matches both Project Management Institute and Philip
+    # Morris International) — confirmed live that trusting a single guessed match
+    # silently picks the wrong one with no warning. So: search for candidates,
+    # confirm the right one, then spend research credits on it.
+    if "dd_candidates" not in st.session_state:
+        st.session_state.dd_candidates = []
 
-    if deep_dive_submitted:
+    search_col, button_col = st.columns([4, 1])
+    company_query = search_col.text_input(
+        "Company name",
+        value="",
+        help="Exact or close company name, e.g. \"Sothema\" or \"CIH Bank\". A domain also works, e.g. \"sothema.ma\"."
+    )
+    button_col.write("")
+    if button_col.button("🔍 Search", width="stretch"):
         if not company_query.strip():
             st.warning("Enter a company name.")
-            st.stop()
-
-        with st.status(f"Researching {company_query}...", expanded=True) as status:
-            def on_progress(msg: str):
-                status.write(msg)
-
-            try:
-                result = run_company_deep_dive(
-                    company_query=company_query.strip(),
-                    output_path=f"deepdive_{company_query.strip().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    on_progress=on_progress
-                )
-            except Exception as e:
-                status.update(label=f"Failed: {e}", state="error")
-                st.error(
-                    "The run stopped before finishing, but everything completed up to that point "
-                    "was already saved — reload this page and check **Previous run files** above."
-                )
-                st.stop()
-
-            status.update(label="Research complete", state="complete")
-
-        if not result["output_path"]:
-            st.warning(f"No company found matching \"{company_query}\" — check the spelling or try the website domain instead.")
         else:
-            company = result["company"]
-            contacts = result["contacts"]
+            with st.spinner(f"Searching for '{company_query}'..."):
+                st.session_state.dd_candidates = search_company_candidates(company_query.strip(), limit=5)
+            if not st.session_state.dd_candidates:
+                st.warning(f"No companies found matching \"{company_query}\" — try a different spelling or the website domain instead.")
 
-            st.subheader("Summary")
-            c1, c2 = st.columns(2)
-            c1.metric("Company", company["Company Name"])
-            c2.metric("Contacts researched", len(contacts))
+    if st.session_state.dd_candidates:
+        options = {}
+        for c in st.session_state.dd_candidates:
+            label = f"{c.get('name', 'Unknown')} — {c.get('primary_domain') or c.get('domain') or 'no domain on file'}"
+            options[label] = c
 
-            with open(result["output_path"], "rb") as f:
-                st.download_button(
-                    "⬇️ Download Excel Workbook",
-                    data=f.read(),
-                    file_name=os.path.basename(result["output_path"]),
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
+        st.write("**Is one of these the right company?**")
+        choice_label = st.radio("Candidates", list(options.keys()), label_visibility="collapsed")
+        selected = options[choice_label]
 
-            if contacts:
-                st.dataframe(
-                    [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
-                    width="stretch"
-                )
+        if st.button("✅ Research This Company", type="primary"):
+            identifier = selected.get("primary_domain") or selected.get("domain") or selected.get("name")
+            comp_display_name = selected.get("name", identifier)
+
+            with st.status(f"Researching {comp_display_name}...", expanded=True) as status:
+                def on_progress(msg: str):
+                    status.write(msg)
+
+                try:
+                    result = run_company_deep_dive(
+                        company_query=identifier,
+                        output_path=f"deepdive_{str(comp_display_name).replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        on_progress=on_progress
+                    )
+                except Exception as e:
+                    status.update(label=f"Failed: {e}", state="error")
+                    st.error(
+                        "The run stopped before finishing, but everything completed up to that point "
+                        "was already saved — reload this page and check **Previous run files** above."
+                    )
+                    st.stop()
+
+                status.update(label="Research complete", state="complete")
+
+            if not result["output_path"]:
+                st.warning(f"Couldn't retrieve full details for \"{comp_display_name}\" — try again or use its website domain instead.")
+            else:
+                company = result["company"]
+                contacts = result["contacts"]
+
+                st.subheader("Summary")
+                c1, c2 = st.columns(2)
+                c1.metric("Company", company["Company Name"])
+                c2.metric("Contacts researched", len(contacts))
+
+                with open(result["output_path"], "rb") as f:
+                    st.download_button(
+                        "⬇️ Download Excel Workbook",
+                        data=f.read(),
+                        file_name=os.path.basename(result["output_path"]),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary"
+                    )
+
+                if contacts:
+                    st.dataframe(
+                        [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
+                        width="stretch"
+                    )
