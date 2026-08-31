@@ -101,6 +101,84 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
                 "suggested_roles": ["Human Resources Director", "Head of L&D", "COO", "Chief Digital Officer", "CTO"]
             }
 
+    def deep_company_research(self, company: Dict[str, Any], offering_context: str) -> Dict[str, str]:
+        """
+        Account Deep-Dive: produces a full research dossier on ONE specific, already-
+        chosen company — recent news, initiatives, leadership context, and competitive
+        position — grounded in the same 8 organizational signals used for qualification,
+        but without the Go/No-Go framing (this company was picked deliberately, not
+        screened from a list).
+        """
+        name = company.get("name", "Unknown Company")
+        industry = company.get("industry", "Unknown")
+        employees = company.get("estimated_num_employees", company.get("num_employees", "Unknown"))
+        city = company.get("city", "")
+        country = company.get("country", "")
+        location = f"{city}, {country}".strip(", ") or "Morocco"
+        short_desc = company.get("short_description", company.get("snippet", "No description provided"))
+        website = company.get("website_url", "")
+
+        prompt = f"""You are a senior B2B account researcher for ALX Enterprise Morocco, preparing a deep research dossier ahead of a real meeting with this company.
+
+OUR OFFERING:
+{offering_context}
+
+TARGET COMPANY:
+- Name: {name}
+- Industry: {industry}
+- Location: {location}
+- Employees: {employees}
+- Website: {website}
+- Description: {short_desc}
+
+Perform real public web research on this specific company. Produce a genuine, detailed dossier — not generic filler — covering:
+1. Which of the 8 organizational signals from OUR OFFERING this company shows real evidence of (company-specific news/initiatives where findable, sector-level evidence otherwise), and why that matters for them specifically.
+2. Recent developments: news, initiatives, leadership changes, expansions, or public strategic statements from the last 1-2 years.
+3. Competitive/industry position: where this company sits versus peers in digital/AI adoption.
+4. Concrete, meeting-ready talking points: 2-3 specific things worth raising in a real conversation with this company, tied to what was actually found.
+
+Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no extra text):
+{{
+  "signals_found": "Which signals apply and the specific evidence for each.",
+  "recent_developments": "Real recent news/initiatives/leadership context found through research.",
+  "competitive_position": "Where this company sits in its industry's digital/AI adoption curve.",
+  "meeting_talking_points": "2-3 concrete, specific points worth raising in a real conversation with this company."
+}}"""
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a thorough enterprise account researcher. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3
+        }
+
+        try:
+            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=45)
+            response.raise_for_status()
+            data = response.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
+
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(raw_text)
+            return {
+                "signals_found": result.get("signals_found", "No specific signals identified."),
+                "recent_developments": result.get("recent_developments", "No recent public developments found."),
+                "competitive_position": result.get("competitive_position", f"{name} operates in {industry}."),
+                "meeting_talking_points": result.get("meeting_talking_points", "")
+            }
+        except Exception as e:
+            logger.error(f"Perplexity deep company research error for {name}: {e}")
+            return {
+                "signals_found": f"Research unavailable: {str(e)}",
+                "recent_developments": "Not available.",
+                "competitive_position": f"{name} operates in {industry} in {location}.",
+                "meeting_talking_points": "Not available."
+            }
+
     def select_best_contacts(
         self,
         company: Dict[str, Any],
@@ -272,4 +350,95 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
                 "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
                 "company_brief": f"{comp_name} ({industry}) operates in {location}.",
                 "industry_position": "Industry digital journey."
+            }
+
+    def deep_contact_research(
+        self,
+        contact: Dict[str, Any],
+        company: Dict[str, Any],
+        offering_context: str
+    ) -> Dict[str, str]:
+        """
+        Account Deep-Dive: a deeper version of generate_deep_contact_brief for the
+        small number of contacts actually selected ahead of a real meeting. Adds an
+        explicit search for public professional presence (articles, interviews,
+        quotes, blog mentions) on top of the standard persona-matched pitch — and is
+        explicitly scoped to the professional public record only, never personal-life
+        details (family, hobbies, personal social activity), even if technically
+        discoverable.
+        """
+        contact_name = contact.get("name", f"{contact.get('first_name', '')} {contact.get('last_name', '')}").strip()
+        contact_title = contact.get("title", "Executive")
+        contact_linkedin = contact.get("linkedin_url", "")
+        contact_headline = contact.get("headline", "")
+
+        comp_name = company.get("name", "Unknown Company")
+        industry = company.get("industry", "Unknown")
+        location = f"{company.get('city', '')}, {company.get('country', '')}".strip(", ") or "Morocco"
+
+        prompt = f"""You are a senior sales researcher for ALX Enterprise Morocco preparing deep, meeting-ready research on one specific contact ahead of a real meeting.
+
+OUR OFFERING:
+{offering_context}
+
+TARGET CONTACT:
+- Name: {contact_name}
+- Job Title: {contact_title}
+- Headline/Summary: {contact_headline}
+- LinkedIn: {contact_linkedin}
+
+TARGET COMPANY: {comp_name} ({industry}, {location})
+
+Perform real public web research on this specific person. Scope: their PROFESSIONAL public record only — career background, public statements, articles, interviews, conference talks, or blog posts that name them. Do NOT search for or report personal-life details (family, hobbies, personal social activity) even if something is technically discoverable — this is for professional meeting prep, not personal profiling.
+
+Produce 5 sections:
+1. Professional background: career history, tenure, scope of responsibility, based on genuine research.
+2. Public presence: any real articles, interviews, quotes, conference appearances, or blog mentions naming this person, with enough detail to reference in conversation. If genuinely nothing is found, say so plainly rather than inventing something.
+3. Opening sales angle: judge whether this contact is closer to the "Karim" archetype (senior executive — lead with efficiency/ROI) or "Youssef" archetype (specialist/IC — lead with skill-building/growth) from OUR OFFERING, and write the angle in that register, naming a specific real ALX offering and a real proof point.
+4. Company brief: which of the 8 organizational signals this company shows evidence of, and the resulting training needs.
+5. Meeting prep note: one practical suggestion for how to open or steer a real conversation with this specific person, grounded in what was actually found about them.
+
+Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no extra text):
+{{
+  "professional_background": "...",
+  "public_presence": "...",
+  "opening_sales_angle": "...",
+  "company_brief": "...",
+  "meeting_prep_note": "..."
+}}"""
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a professional enterprise sales intelligence researcher. Stay strictly within someone's professional public record. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3
+        }
+
+        try:
+            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=45)
+            response.raise_for_status()
+            data = response.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
+
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(raw_text)
+            return {
+                "professional_background": result.get("professional_background", f"{contact_name} serves as {contact_title} at {comp_name}."),
+                "public_presence": result.get("public_presence", "No public articles, interviews, or mentions found."),
+                "opening_sales_angle": result.get("opening_sales_angle", "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership."),
+                "company_brief": result.get("company_brief", f"{comp_name} ({industry}) operates in {location}."),
+                "meeting_prep_note": result.get("meeting_prep_note", "")
+            }
+        except Exception as e:
+            logger.error(f"Perplexity deep contact research error for {contact_name} at {comp_name}: {e}")
+            return {
+                "professional_background": f"{contact_name} serves as {contact_title} at {comp_name}.",
+                "public_presence": "Research unavailable.",
+                "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
+                "company_brief": f"{comp_name} ({industry}) operates in {location}.",
+                "meeting_prep_note": ""
             }

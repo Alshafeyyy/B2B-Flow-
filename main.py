@@ -1,4 +1,6 @@
 import argparse
+import re
+from datetime import datetime
 
 from config import (
     DEFAULT_LOCATIONS,
@@ -6,10 +8,11 @@ from config import (
     DEFAULT_INDUSTRIES,
     DEFAULT_COMPANY_LIMIT
 )
-from pipeline import run_pipeline, default_output_filename
+from pipeline import run_pipeline, run_company_deep_dive, default_output_filename
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ALX Enterprise 2-Phase B2B Sourcing, Qualification & Enrichment Pipeline")
+    parser.add_argument("--deep-dive", type=str, default=None, metavar="COMPANY", help="Skip company search entirely and deep-research ONE known company by name, e.g. --deep-dive \"Sothema\". Produces a company dossier + deep individual research per selected contact (professional background, public presence, meeting prep). Ignores --locations/--keywords/--industries/--limit etc.")
     parser.add_argument("--locations", nargs="+", default=DEFAULT_LOCATIONS, help="Target country (default: Morocco)")
     parser.add_argument("--keywords", nargs="+", default=DEFAULT_INDUSTRIES, help="Target industry keywords (loose Apollo-side keyword tag match)")
     parser.add_argument("--industries", nargs="+", default=None, help="Exact Apollo 'industry' field values to strictly filter to client-side, e.g. --industries \"hospital & health care\" \"medical practice\". See apollo_industries_reference.txt for real values pulled from Apollo's data. If omitted, only --keywords applies.")
@@ -28,6 +31,21 @@ def main():
     print("=========================================================================")
     print("🚀 ALX ENTERPRISE 2-PHASE B2B SOURCING, QUALIFICATION & BRIEFING PIPELINE")
     print("=========================================================================")
+
+    if args.deep_dive:
+        slug = re.sub(r"[^a-z0-9]+", "-", args.deep_dive.lower()).strip("-")
+        output_path = args.output or f"{slug}_deepdive_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        try:
+            run_company_deep_dive(
+                company_query=args.deep_dive,
+                output_path=output_path,
+                on_progress=lambda msg: print(f"\n{msg}")
+            )
+        except RuntimeError as e:
+            print(f"❌ Error: {e}")
+            return
+        print("\n=========================================================================")
+        return
 
     output_path = args.output or default_output_filename(args.industries, args.keywords, args.limit)
 

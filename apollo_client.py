@@ -73,6 +73,36 @@ class ApolloClient:
                 logger.error(f"Response status: {e.response.status_code}, Body: {e.response.text}")
             return []
 
+    def enrich_company(self, identifier: str) -> Optional[Dict[str, Any]]:
+        """
+        Account Deep-Dive: looks up ONE specific, known company by name or domain
+        (unlike search_organizations, which scans many companies against filters).
+        Accepts whatever the user typed — a domain-looking identifier (contains a
+        "." and no spaces) is sent as `domain`, otherwise as `name`. Confirmed live
+        against the real API that both param styles resolve correctly.
+        """
+        url = f"{self.BASE_URL}/organizations/enrich"
+        identifier = (identifier or "").strip()
+        if not identifier:
+            return None
+
+        is_domain = "." in identifier and " " not in identifier
+        params = {"domain": identifier} if is_domain else {"name": identifier}
+
+        try:
+            logger.info(f"Looking up company '{identifier}' via Organization Enrichment...")
+            response = requests.post(url, params=params, headers=self._get_headers(), timeout=30)
+            response.raise_for_status()
+            org = response.json().get("organization")
+            if org:
+                logger.info(f"Found company: {org.get('name')}")
+            else:
+                logger.warning(f"No company found for '{identifier}'.")
+            return org
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error enriching company '{identifier}': {e}")
+            return None
+
     def list_company_contacts(
         self,
         organization_id: Optional[str] = None,

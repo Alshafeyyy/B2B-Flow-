@@ -10,29 +10,31 @@ logger = logging.getLogger("Exporter")
 def export_pipeline_to_excel(
     companies_data: List[Dict[str, Any]],
     contacts_briefs_data: List[Dict[str, Any]],
-    output_filename: str = "ALX_Enterprise_Sourcing_Pipeline.xlsx"
+    output_filename: str = "ALX_Enterprise_Sourcing_Pipeline.xlsx",
+    sheet1_name: str = "Company Qualification",
+    sheet2_name: str = "Enriched Contacts & Briefs"
 ) -> str:
     """
     Exports 2-phase pipeline output into a styled multi-sheet Excel workbook.
-    Sheet 1: Company Qualification & Role Suggestions
+    Sheet 1: Company Qualification & Role Suggestions (or a company dossier, for the Account Deep-Dive flow)
     Sheet 2: Enriched Contacts & Deep Pre-Call Briefs
     """
     logger.info(f"Exporting pipeline data to Excel workbook: {output_filename}...")
-    
+
     with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
         # Sheet 1: Company Sourcing & Qualification
         if companies_data:
             df_comp = pd.DataFrame(companies_data)
-            df_comp.to_excel(writer, sheet_name="Company Qualification", index=False)
+            df_comp.to_excel(writer, sheet_name=sheet1_name, index=False)
         else:
-            pd.DataFrame([{"Message": "No companies processed."}]).to_excel(writer, sheet_name="Company Qualification", index=False)
+            pd.DataFrame([{"Message": "No companies processed."}]).to_excel(writer, sheet_name=sheet1_name, index=False)
 
         # Sheet 2: Enriched Contacts & Briefs
         if contacts_briefs_data:
             df_contacts = pd.DataFrame(contacts_briefs_data)
-            df_contacts.to_excel(writer, sheet_name="Enriched Contacts & Briefs", index=False)
+            df_contacts.to_excel(writer, sheet_name=sheet2_name, index=False)
         else:
-            pd.DataFrame([{"Message": "No contacts retrieved for 'Go' companies."}]).to_excel(writer, sheet_name="Enriched Contacts & Briefs", index=False)
+            pd.DataFrame([{"Message": "No contacts retrieved for 'Go' companies."}]).to_excel(writer, sheet_name=sheet2_name, index=False)
 
     try:
         from openpyxl import load_workbook

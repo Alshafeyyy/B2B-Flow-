@@ -11,7 +11,7 @@ for _key in ("APOLLO_API_KEY", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "OFFERI
         os.environ[_key] = str(st.secrets[_key])
 
 from config import APOLLO_API_KEY, PERPLEXITY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
-from pipeline import run_pipeline, default_output_filename
+from pipeline import run_pipeline, run_company_deep_dive, default_output_filename
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", layout="centered")
 
@@ -21,7 +21,8 @@ st.caption("Source companies, AI-qualify them, find decision-makers, and generat
 # Recovery: the pipeline saves progress to disk after every company/contact, not
 # just at the end — so a run that dies partway (dropped connection, app restart,
 # an API error) still leaves a file with whatever was completed. Surface any of
-# those here so the credits already spent on them aren't lost.
+# those here so the credits already spent on them aren't lost. Shared by both
+# modes below, since either can produce a checkpointed file.
 existing_files = sorted(glob.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
 if existing_files:
     with st.expander(f"📂 Previous run files on this server ({len(existing_files)})"):
@@ -45,132 +46,213 @@ if not APOLLO_API_KEY or not PERPLEXITY_API_KEY:
     )
     st.stop()
 
-EMPLOYEE_RANGE_LABELS = {
-    "51,200": "51 – 200 employees",
-    "201,500": "201 – 500 employees",
-    "501,1000": "501 – 1,000 employees",
-    "1001,5000": "1,001 – 5,000 employees",
-    "5001,10000": "5,001 – 10,000 employees",
-}
+mode = st.radio(
+    "What do you want to do?",
+    ["Find New Companies", "Deep-Dive a Company"],
+    horizontal=True,
+    help="Find New Companies: search many companies by industry/size/location and qualify them. "
+         "Deep-Dive a Company: you already know the company — get a full research dossier on it "
+         "plus deep, meeting-ready research on its best-fit contacts."
+)
+st.divider()
 
-@st.cache_data
-def load_industry_options():
-    with open("apollo_industries_reference.txt") as f:
-        return sorted(line.strip() for line in f if line.strip() and not line.startswith("#"))
+# =============================================================================
+# MODE 1: Find New Companies (lead discovery — unchanged from before)
+# =============================================================================
+if mode == "Find New Companies":
+    EMPLOYEE_RANGE_LABELS = {
+        "51,200": "51 – 200 employees",
+        "201,500": "201 – 500 employees",
+        "501,1000": "501 – 1,000 employees",
+        "1001,5000": "1,001 – 5,000 employees",
+        "5001,10000": "5,001 – 10,000 employees",
+    }
 
-industry_options = load_industry_options()
+    @st.cache_data
+    def load_industry_options():
+        with open("apollo_industries_reference.txt") as f:
+            return sorted(line.strip() for line in f if line.strip() and not line.startswith("#"))
 
-with st.form("prospecting_form"):
-    industries = st.multiselect(
-        "Industries",
-        options=industry_options,
-        default=[i for i in DEFAULT_INDUSTRIES if i in industry_options],
-        help="Pulled from real Apollo data. Leave empty to search broadly across all industries."
-    )
-    country_input = st.text_input("Country / Location", value="Morocco", help="Comma-separate multiple countries.")
-    size_labels = st.multiselect(
-        "Company size",
-        options=list(EMPLOYEE_RANGE_LABELS.values()),
-        default=[EMPLOYEE_RANGE_LABELS[r] for r in DEFAULT_EMPLOYEE_RANGES]
-    )
-    limit = st.number_input(
-        "Number of 'Go' companies wanted", min_value=1, max_value=20, value=5, step=1,
-        help="This is the target Go count, not raw companies scanned — Apollo will be searched as deep as "
-             "needed (up to 5x this number of candidates) to find that many qualified companies. "
-             "Each candidate scanned spends Apollo + Perplexity credits, so worst-case cost scales with this too."
-    )
+    industry_options = load_industry_options()
 
-    with st.expander("Advanced filters (optional)"):
-        rev_col1, rev_col2 = st.columns(2)
-        revenue_min_input = rev_col1.number_input("Min annual revenue (USD)", min_value=0, value=0, step=100_000)
-        revenue_max_input = rev_col2.number_input("Max annual revenue (USD)", min_value=0, value=0, step=100_000)
-        hiring_for_input = st.text_input(
-            "Only companies currently hiring for...",
-            value="",
-            help="Comma-separated roles, e.g. \"data analyst, AI engineer\". Companies hiring for these roles "
-                 "signal active investment in exactly what we sell — a sharper buying signal than industry/size alone."
+    with st.form("prospecting_form"):
+        industries = st.multiselect(
+            "Industries",
+            options=industry_options,
+            default=[i for i in DEFAULT_INDUSTRIES if i in industry_options],
+            help="Pulled from real Apollo data. Leave empty to search broadly across all industries."
         )
-        exclude_input = st.text_area(
-            "Exclude companies",
-            value="",
-            help="One per line or comma-separated, e.g. companies from a previous run you don't want to see again. "
-                 "Matches by name (not exact — \"Maroc Telecom\" will also skip \"Maroc Telecom S.A.\")."
+        country_input = st.text_input("Country / Location", value="Morocco", help="Comma-separate multiple countries.")
+        size_labels = st.multiselect(
+            "Company size",
+            options=list(EMPLOYEE_RANGE_LABELS.values()),
+            default=[EMPLOYEE_RANGE_LABELS[r] for r in DEFAULT_EMPLOYEE_RANGES]
+        )
+        limit = st.number_input(
+            "Number of 'Go' companies wanted", min_value=1, max_value=20, value=5, step=1,
+            help="This is the target Go count, not raw companies scanned — Apollo will be searched as deep as "
+                 "needed (up to 5x this number of candidates) to find that many qualified companies. "
+                 "Each candidate scanned spends Apollo + Perplexity credits, so worst-case cost scales with this too."
         )
 
-    submitted = st.form_submit_button("Run Pipeline", type="primary")
-
-if submitted:
-    locations = [loc.strip() for loc in country_input.split(",") if loc.strip()]
-    label_to_range = {v: k for k, v in EMPLOYEE_RANGE_LABELS.items()}
-    employee_ranges = [label_to_range[label] for label in size_labels] or list(EMPLOYEE_RANGE_LABELS.keys())
-    keywords = industries or DEFAULT_INDUSTRIES
-
-    if not locations:
-        st.warning("Enter at least one country/location.")
-        st.stop()
-
-    revenue_range = None
-    if revenue_min_input or revenue_max_input:
-        revenue_range = {}
-        if revenue_min_input:
-            revenue_range["min"] = int(revenue_min_input)
-        if revenue_max_input:
-            revenue_range["max"] = int(revenue_max_input)
-    hiring_for = [h.strip() for h in hiring_for_input.split(",") if h.strip()] or None
-    exclude_companies = [e.strip() for e in exclude_input.replace(",", "\n").splitlines() if e.strip()] or None
-
-    log_lines = []
-    with st.status("Running pipeline...", expanded=True) as status:
-        def on_progress(msg: str):
-            log_lines.append(msg)
-            status.write(msg)
-
-        try:
-            result = run_pipeline(
-                locations=locations,
-                keywords=keywords,
-                industries=industries or None,
-                employee_ranges=employee_ranges,
-                limit=int(limit),
-                output_path=default_output_filename(industries, keywords, int(limit)),
-                revenue_range=revenue_range,
-                hiring_for=hiring_for,
-                exclude_companies=exclude_companies,
-                on_progress=on_progress
+        with st.expander("Advanced filters (optional)"):
+            rev_col1, rev_col2 = st.columns(2)
+            revenue_min_input = rev_col1.number_input("Min annual revenue (USD)", min_value=0, value=0, step=100_000)
+            revenue_max_input = rev_col2.number_input("Max annual revenue (USD)", min_value=0, value=0, step=100_000)
+            hiring_for_input = st.text_input(
+                "Only companies currently hiring for...",
+                value="",
+                help="Comma-separated roles, e.g. \"data analyst, AI engineer\". Companies hiring for these roles "
+                     "signal active investment in exactly what we sell — a sharper buying signal than industry/size alone."
             )
-        except Exception as e:
-            status.update(label=f"Failed: {e}", state="error")
-            st.error(
-                "The run stopped before finishing, but everything completed up to that point "
-                "was already saved — reload this page and check **Previous run files** above."
+            exclude_input = st.text_area(
+                "Exclude companies",
+                value="",
+                help="One per line or comma-separated, e.g. companies from a previous run you don't want to see again. "
+                     "Matches by name (not exact — \"Maroc Telecom\" will also skip \"Maroc Telecom S.A.\")."
             )
+
+        submitted = st.form_submit_button("Run Pipeline", type="primary")
+
+    if submitted:
+        locations = [loc.strip() for loc in country_input.split(",") if loc.strip()]
+        label_to_range = {v: k for k, v in EMPLOYEE_RANGE_LABELS.items()}
+        employee_ranges = [label_to_range[label] for label in size_labels] or list(EMPLOYEE_RANGE_LABELS.keys())
+        keywords = industries or DEFAULT_INDUSTRIES
+
+        if not locations:
+            st.warning("Enter at least one country/location.")
             st.stop()
 
-        status.update(label="Pipeline complete", state="complete")
+        revenue_range = None
+        if revenue_min_input or revenue_max_input:
+            revenue_range = {}
+            if revenue_min_input:
+                revenue_range["min"] = int(revenue_min_input)
+            if revenue_max_input:
+                revenue_range["max"] = int(revenue_max_input)
+        hiring_for = [h.strip() for h in hiring_for_input.split(",") if h.strip()] or None
+        exclude_companies = [e.strip() for e in exclude_input.replace(",", "\n").splitlines() if e.strip()] or None
 
-    if not result["output_path"]:
-        st.warning("No companies matched these filters — try broadening the industries or size range.")
-    else:
-        companies = result["companies"]
-        contacts = result["contacts"]
-        go_count = result["go_count"]
+        with st.status("Running pipeline...", expanded=True) as status:
+            def on_progress(msg: str):
+                status.write(msg)
 
-        st.subheader("Summary")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Companies sourced", len(companies))
-        c2.metric("Marked 'Go'", go_count)
-        c3.metric("Contacts found", len(contacts))
+            try:
+                result = run_pipeline(
+                    locations=locations,
+                    keywords=keywords,
+                    industries=industries or None,
+                    employee_ranges=employee_ranges,
+                    limit=int(limit),
+                    output_path=default_output_filename(industries, keywords, int(limit)),
+                    revenue_range=revenue_range,
+                    hiring_for=hiring_for,
+                    exclude_companies=exclude_companies,
+                    on_progress=on_progress
+                )
+            except Exception as e:
+                status.update(label=f"Failed: {e}", state="error")
+                st.error(
+                    "The run stopped before finishing, but everything completed up to that point "
+                    "was already saved — reload this page and check **Previous run files** above."
+                )
+                st.stop()
 
-        with open(result["output_path"], "rb") as f:
-            st.download_button(
-                "⬇️ Download Excel Workbook",
-                data=f.read(),
-                file_name=os.path.basename(result["output_path"]),
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary"
+            status.update(label="Pipeline complete", state="complete")
+
+        if not result["output_path"]:
+            st.warning("No companies matched these filters — try broadening the industries or size range.")
+        else:
+            companies = result["companies"]
+            contacts = result["contacts"]
+            go_count = result["go_count"]
+
+            st.subheader("Summary")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Companies sourced", len(companies))
+            c2.metric("Marked 'Go'", go_count)
+            c3.metric("Contacts found", len(contacts))
+
+            with open(result["output_path"], "rb") as f:
+                st.download_button(
+                    "⬇️ Download Excel Workbook",
+                    data=f.read(),
+                    file_name=os.path.basename(result["output_path"]),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary"
+                )
+
+            st.dataframe(
+                [{"Company": c["Company Name"], "Status": c["AI Status"], "Industry": c["Industry"]} for c in companies],
+                width="stretch"
             )
 
-        st.dataframe(
-            [{"Company": c["Company Name"], "Status": c["AI Status"], "Industry": c["Industry"]} for c in companies],
-            width="stretch"
+# =============================================================================
+# MODE 2: Deep-Dive a Company (account research — you already know the company)
+# =============================================================================
+else:
+    st.caption(
+        "You already know the company — this pulls a full research dossier on it, plus deep, "
+        "meeting-ready research on its best-fit contacts (professional background, public presence, "
+        "a persona-matched opening angle). Scoped to public professional information only."
+    )
+
+    with st.form("deep_dive_form"):
+        company_query = st.text_input(
+            "Company name",
+            value="",
+            help="Exact or close company name, e.g. \"Sothema\" or \"CIH Bank\". A domain also works, e.g. \"sothema.ma\"."
         )
+        deep_dive_submitted = st.form_submit_button("Research This Company", type="primary")
+
+    if deep_dive_submitted:
+        if not company_query.strip():
+            st.warning("Enter a company name.")
+            st.stop()
+
+        with st.status(f"Researching {company_query}...", expanded=True) as status:
+            def on_progress(msg: str):
+                status.write(msg)
+
+            try:
+                result = run_company_deep_dive(
+                    company_query=company_query.strip(),
+                    output_path=f"deepdive_{company_query.strip().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    on_progress=on_progress
+                )
+            except Exception as e:
+                status.update(label=f"Failed: {e}", state="error")
+                st.error(
+                    "The run stopped before finishing, but everything completed up to that point "
+                    "was already saved — reload this page and check **Previous run files** above."
+                )
+                st.stop()
+
+            status.update(label="Research complete", state="complete")
+
+        if not result["output_path"]:
+            st.warning(f"No company found matching \"{company_query}\" — check the spelling or try the website domain instead.")
+        else:
+            company = result["company"]
+            contacts = result["contacts"]
+
+            st.subheader("Summary")
+            c1, c2 = st.columns(2)
+            c1.metric("Company", company["Company Name"])
+            c2.metric("Contacts researched", len(contacts))
+
+            with open(result["output_path"], "rb") as f:
+                st.download_button(
+                    "⬇️ Download Excel Workbook",
+                    data=f.read(),
+                    file_name=os.path.basename(result["output_path"]),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary"
+                )
+
+            if contacts:
+                st.dataframe(
+                    [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
+                    width="stretch"
+                )

@@ -308,3 +308,172 @@ def run_pipeline(
         "contacts": contacts_briefs_records,
         "go_count": len(go_companies)
     }
+
+
+def run_company_deep_dive(
+    company_query: str,
+    output_path: str,
+    on_progress: Optional[Callable[[str], None]] = None
+) -> Dict[str, Any]:
+    """
+    Account Deep-Dive: researches ONE specific, already-known company in real depth
+    — a full company dossier plus, for its best-fit contacts, deep individual
+    research (professional background, public presence, persona-matched pitch) —
+    for preparing an actual meeting. For discovering new leads across many
+    companies, see run_pipeline instead.
+    """
+    def progress(msg: str):
+        if on_progress:
+            on_progress(msg)
+
+    company_sheet_records: List[Dict[str, Any]] = []
+    contacts_records: List[Dict[str, Any]] = []
+
+    def checkpoint():
+        try:
+            export_pipeline_to_excel(
+                company_sheet_records, contacts_records, output_path,
+                sheet1_name="Company Dossier", sheet2_name="Contact Research"
+            )
+        except Exception as e:
+            logger.warning(f"Checkpoint save failed (continuing run): {e}")
+
+    if not APOLLO_API_KEY:
+        raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    if not PERPLEXITY_API_KEY:
+        raise RuntimeError("PERPLEXITY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+
+    apollo = ApolloClient(api_key=APOLLO_API_KEY)
+    perplexity = PerplexityClient(api_key=PERPLEXITY_API_KEY, model=PERPLEXITY_MODEL)
+
+    # -------------------------------------------------------------------------
+    # Look up the one company
+    # -------------------------------------------------------------------------
+    progress(f"🔎 Looking up '{company_query}'...")
+    comp_raw = apollo.enrich_company(company_query)
+
+    if not comp_raw:
+        logger.warning(f"No company found for '{company_query}'.")
+        progress(f"⚠️ No company found matching '{company_query}'.")
+        return {"output_path": None, "company": None, "contacts": []}
+
+    comp_name = comp_raw.get("name", company_query)
+    domain = comp_raw.get("primary_domain") or comp_raw.get("domain", "")
+    industry = comp_raw.get("industry", "Unknown")
+    employees = comp_raw.get("estimated_num_employees", comp_raw.get("num_employees", "Unknown"))
+    city = comp_raw.get("city", "")
+    country = comp_raw.get("country", "")
+    location = f"{city}, {country}".strip(", ") or "Morocco"
+    website = comp_raw.get("website_url", f"https://{domain}" if domain else "")
+    short_desc = comp_raw.get("short_description", "")
+    comp_id = comp_raw.get("id") or comp_raw.get("organization_id")
+
+    progress(f"✅ Found: {comp_name} ({industry}, {employees} employees)")
+
+    # -------------------------------------------------------------------------
+    # Deep company research
+    # -------------------------------------------------------------------------
+    progress(f"📊 Researching {comp_name} in depth...")
+    dossier = perplexity.deep_company_research(comp_raw, OFFERING_DESCRIPTION)
+
+    company_record = {
+        "Company Name": comp_name,
+        "Domain": domain,
+        "Industry": industry,
+        "Employees": employees,
+        "Location": location,
+        "Website": website,
+        "Company Description": short_desc,
+        "Signals Found": dossier.get("signals_found", ""),
+        "Recent Developments": dossier.get("recent_developments", ""),
+        "Competitive Position": dossier.get("competitive_position", ""),
+        "Meeting Talking Points": dossier.get("meeting_talking_points", "")
+    }
+    company_sheet_records.append(company_record)
+    checkpoint()
+
+    # -------------------------------------------------------------------------
+    # Contacts: real roster -> AI selection (unchanged, proven mechanism) -> enrich
+    # -------------------------------------------------------------------------
+    progress(f"👥 Finding contacts at {comp_name}...")
+    roster = apollo.list_company_contacts(
+        organization_id=comp_id, domain=domain, company_name=comp_name, per_page=100
+    )
+
+    if not roster:
+        progress(f"⚠️ No contacts found at {comp_name}.")
+        out_file = export_pipeline_to_excel(
+            company_sheet_records, contacts_records, output_path,
+            sheet1_name="Company Dossier", sheet2_name="Contact Research"
+        )
+        progress("🎉 DEEP-DIVE COMPLETE (no contacts found).")
+        return {"output_path": out_file, "company": company_record, "contacts": []}
+
+    progress(f"   Found {len(roster)} people on file. Selecting best-fit contacts...")
+    selected = perplexity.select_best_contacts(comp_raw, roster, OFFERING_DESCRIPTION, None, max_selections=5)
+
+    progress(f"🔓 Unlocking contact details for {len(selected)} selected people...")
+    enriched = apollo.bulk_enrich_people(selected, reveal_personal_emails=False)
+
+    # -------------------------------------------------------------------------
+    # Deep individual research per selected contact (professional record only —
+    # see PerplexityClient.deep_contact_research for the explicit scope boundary)
+    # -------------------------------------------------------------------------
+    progress(f"📝 Researching {len(enriched)} contacts in depth (professional background, public presence)...")
+
+    for idx, c in enumerate(tqdm(enriched, desc="Deep Contact Research"), start=1):
+        contact_name = c.get("name", f"{c.get('first_name', '')} {c.get('last_name', '')}").strip()
+        job_title = c.get("title", "Executive")
+        email = c.get("email") or "No verified email found"
+        linkedin_url = c.get("linkedin_url") or "Not available"
+
+        phone_list = c.get("phone_numbers", [])
+        phone_str = ""
+        if phone_list and isinstance(phone_list, list):
+            nums = [p.get("raw_number") or p.get("sanitized_number") or p.get("number") for p in phone_list if (p.get("raw_number") or p.get("sanitized_number") or p.get("number"))]
+            phone_str = ", ".join(nums)
+        elif c.get("sanitized_phone_number"):
+            phone_str = c.get("sanitized_phone_number")
+        else:
+            phone_str = c.get("phone", "Not available")
+
+        if not phone_str:
+            phone_str = "Not available"
+
+        research = perplexity.deep_contact_research(c, comp_raw, OFFERING_DESCRIPTION)
+
+        contact_entry = {
+            "Company Name": comp_name,
+            "Contact Name": contact_name,
+            "Job Title": job_title,
+            "Email": email,
+            "Phone Number": phone_str,
+            "LinkedIn URL": linkedin_url,
+            "Enrichment Status": "Enriched" if c.get("_enriched") else "Not Matched",
+            "Why This Contact": c.get("_selection_reason", ""),
+            "1. Professional Background": research.get("professional_background", ""),
+            "2. Public Presence (Articles/Interviews/Mentions)": research.get("public_presence", ""),
+            "3. Opening Sales Angle": research.get("opening_sales_angle", ""),
+            "4. Company Brief": research.get("company_brief", ""),
+            "5. Meeting Prep Note": research.get("meeting_prep_note", "")
+        }
+
+        contacts_records.append(contact_entry)
+        checkpoint()
+        progress(f"   ✓ Researched {idx}/{len(enriched)}: {contact_name}")
+
+    out_file = export_pipeline_to_excel(
+        company_sheet_records, contacts_records, output_path,
+        sheet1_name="Company Dossier", sheet2_name="Contact Research"
+    )
+
+    progress("🎉 DEEP-DIVE COMPLETE!")
+    progress(f"📊 Company Dossier: {comp_name}")
+    progress(f"👥 Contacts Researched: {len(contacts_records)}")
+    progress(f"📁 Master Excel Workbook: {out_file}")
+
+    return {
+        "output_path": out_file,
+        "company": company_record,
+        "contacts": contacts_records
+    }
