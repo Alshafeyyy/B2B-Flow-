@@ -1,5 +1,6 @@
 import os
 import glob
+import base64
 from datetime import datetime
 import streamlit as st
 
@@ -15,11 +16,20 @@ from pipeline import run_pipeline, run_company_deep_dive, search_company_candida
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🎯", layout="centered")
 
+
+@st.cache_data
+def _load_logo_b64() -> str:
+    with open(os.path.join(os.path.dirname(__file__), "assets", "alx-enterprise-logo.png"), "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+_logo_b64 = _load_logo_b64()
+
 # -----------------------------------------------------------------------------
-# Brand styling — ALX's real wordmark colors (deep navy "alx" + bright blue
-# "Enterprise"), Inter for a clean, professional feel, and real tabs (not radio
-# buttons) for the two flows so they read as two actual pages, not two options
-# in a form.
+# Brand styling — ALX's real logo and wordmark colors (deep navy "alx" + bright
+# blue "Enterprise"), Inter for a clean, professional feel, and real tabs (not
+# radio buttons) for the two flows so they read as two actual pages, not two
+# options in a form.
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -41,10 +51,9 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] * {
 [data-testid="stHeader"] { background: transparent; }
 .block-container { padding-top: 2.5rem; max-width: 760px; }
 
-.alx-header { display: flex; align-items: baseline; gap: 0.4rem; line-height: 1; }
-.alx-header .alx-word { font-size: 2.3rem; font-weight: 800; color: var(--alx-navy); letter-spacing: -0.02em; }
-.alx-header .alx-enterprise { font-size: 2.3rem; font-weight: 800; color: var(--alx-blue); letter-spacing: -0.02em; }
-.alx-tagline { color: var(--alx-muted); font-size: 0.98rem; margin: 0.35rem 0 1.6rem 0; }
+.alx-header { margin-bottom: 0.2rem; }
+.alx-header img { height: 42px; width: auto; display: block; }
+.alx-tagline { color: var(--alx-muted); font-size: 0.98rem; margin: 0.6rem 0 1.6rem 0; }
 
 /* Tabs as a real page switcher, not the default small underline */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 2px solid var(--alx-border); }
@@ -79,8 +88,25 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] * {
 }
 
 [data-testid="stExpander"] { border: 1px solid var(--alx-border); border-radius: 10px; }
+
+/* Bordered st.container(border=True) cards — same card language as the form,
+   for the Deep-Dive tab which can't use st.form (it's a multi-step flow). */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #FFFFFF; border: 1px solid var(--alx-border) !important;
+    border-radius: 14px; padding: 0.4rem 0.6rem;
+}
+.alx-card-title {
+    font-weight: 700; font-size: 1.02rem; color: var(--alx-navy);
+    margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.4rem;
+}
 </style>
-<div class="alx-header"><span class="alx-word">alx</span><span class="alx-enterprise">Enterprise</span></div>
+""", unsafe_allow_html=True)
+
+# Separate markdown call (an f-string, so it can interpolate the logo) — kept
+# apart from the <style> block above, which is full of literal { } CSS braces
+# that would break an f-string.
+st.markdown(f"""
+<div class="alx-header"><img src="data:image/png;base64,{_logo_b64}" alt="alx Enterprise"></div>
 <div class="alx-tagline">B2B Prospecting — source companies, qualify them, find decision-makers, and generate sales briefs. Powered by Apollo + LLM Gateway.</div>
 """, unsafe_allow_html=True)
 
@@ -264,14 +290,20 @@ with tab_deep_dive:
     if "dd_candidates" not in st.session_state:
         st.session_state.dd_candidates = []
 
-    search_col, button_col = st.columns([4, 1])
-    company_query = search_col.text_input(
-        "Company name",
-        value="",
-        help="Exact or close company name, e.g. \"Sothema\" or \"CIH Bank\". A domain also works, e.g. \"sothema.ma\"."
-    )
-    button_col.write("")
-    if button_col.button("🔍 Search", width="stretch"):
+    # Step 1: search. A single atomic action (type a name, click search), so this
+    # can safely use st.form — gives it the same bordered-card look as Tab 1's
+    # form for free.
+    with st.form("dd_search_form"):
+        st.markdown('<div class="alx-card-title">🔍 Search for a company</div>', unsafe_allow_html=True)
+        company_query = st.text_input(
+            "Company name",
+            value="",
+            label_visibility="collapsed",
+            placeholder="e.g. \"Sothema\", \"CIH Bank\", or a domain like \"sothema.ma\""
+        )
+        search_submitted = st.form_submit_button("Search", type="primary")
+
+    if search_submitted:
         if not company_query.strip():
             st.warning("Enter a company name.")
         else:
@@ -280,17 +312,21 @@ with tab_deep_dive:
             if not st.session_state.dd_candidates:
                 st.warning(f"No companies found matching \"{company_query}\" — try a different spelling or the website domain instead.")
 
+    # Step 2: confirm which real match is the right one. A separate step (can only
+    # appear once search results exist), so it's its own bordered container.
     if st.session_state.dd_candidates:
-        options = {}
-        for c in st.session_state.dd_candidates:
-            label = f"{c.get('name', 'Unknown')} — {c.get('primary_domain') or c.get('domain') or 'no domain on file'}"
-            options[label] = c
+        with st.container(border=True):
+            st.markdown('<div class="alx-card-title">✅ Confirm the right company</div>', unsafe_allow_html=True)
+            options = {}
+            for c in st.session_state.dd_candidates:
+                label = f"{c.get('name', 'Unknown')} — {c.get('primary_domain') or c.get('domain') or 'no domain on file'}"
+                options[label] = c
 
-        st.write("**Is one of these the right company?**")
-        choice_label = st.radio("Candidates", list(options.keys()), label_visibility="collapsed")
-        selected = options[choice_label]
+            choice_label = st.radio("Candidates", list(options.keys()), label_visibility="collapsed")
+            selected = options[choice_label]
+            research_clicked = st.button("Research This Company", type="primary")
 
-        if st.button("✅ Research This Company", type="primary"):
+        if research_clicked:
             identifier = selected.get("primary_domain") or selected.get("domain") or selected.get("name")
             comp_display_name = selected.get("name", identifier)
 
