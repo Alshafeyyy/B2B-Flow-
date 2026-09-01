@@ -35,7 +35,12 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-html, body, [class*="css"], [data-testid="stAppViewContainer"] * {
+/* font-family on html/body only, relying on normal CSS inheritance — a universal
+   `*` selector here previously overrode Streamlit's own icon fonts (arrows,
+   chevrons), making them render as literal icon-name text instead of glyphs.
+   Leaving icon elements alone entirely lets Streamlit's own (more specific)
+   icon-font rule keep working as designed. */
+html, body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
