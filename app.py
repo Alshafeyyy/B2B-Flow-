@@ -13,16 +13,82 @@ for _key in ("APOLLO_API_KEY", "LLM_GATEWAY_API_KEY", "LLM_GATEWAY_BASE_URL", "S
 from config import APOLLO_API_KEY, LLM_GATEWAY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
 from pipeline import run_pipeline, run_company_deep_dive, search_company_candidates, default_output_filename
 
-st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", layout="centered")
+st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🎯", layout="centered")
 
-st.title("🏢 ALX Enterprise B2B Prospecting")
-st.caption("Source companies, AI-qualify them, find decision-makers, and generate sales briefs — powered by Apollo + LLM Gateway.")
+# -----------------------------------------------------------------------------
+# Brand styling — ALX's real wordmark colors (deep navy "alx" + bright blue
+# "Enterprise"), Inter for a clean, professional feel, and real tabs (not radio
+# buttons) for the two flows so they read as two actual pages, not two options
+# in a form.
+# -----------------------------------------------------------------------------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"], [data-testid="stAppViewContainer"] * {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+:root {
+    --alx-navy: #0B1F4D;
+    --alx-blue: #1E5AFF;
+    --alx-bg: #F6F8FC;
+    --alx-border: #E2E8F0;
+    --alx-muted: #64748B;
+}
+
+[data-testid="stAppViewContainer"] { background: var(--alx-bg); }
+[data-testid="stHeader"] { background: transparent; }
+.block-container { padding-top: 2.5rem; max-width: 760px; }
+
+.alx-header { display: flex; align-items: baseline; gap: 0.4rem; line-height: 1; }
+.alx-header .alx-word { font-size: 2.3rem; font-weight: 800; color: var(--alx-navy); letter-spacing: -0.02em; }
+.alx-header .alx-enterprise { font-size: 2.3rem; font-weight: 800; color: var(--alx-blue); letter-spacing: -0.02em; }
+.alx-tagline { color: var(--alx-muted); font-size: 0.98rem; margin: 0.35rem 0 1.6rem 0; }
+
+/* Tabs as a real page switcher, not the default small underline */
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 2px solid var(--alx-border); }
+.stTabs [data-baseweb="tab"] {
+    height: 3rem; padding: 0 1.1rem; font-weight: 600; font-size: 1.02rem;
+    color: var(--alx-muted); border-radius: 10px 10px 0 0;
+}
+.stTabs [data-baseweb="tab"]:hover { color: var(--alx-navy); background: #FFFFFF; }
+.stTabs [aria-selected="true"] {
+    color: var(--alx-blue) !important;
+    border-bottom: 3px solid var(--alx-blue) !important;
+    background: #FFFFFF;
+}
+.stTabs [data-baseweb="tab-panel"] { padding-top: 1.4rem; }
+
+/* Forms as clean cards instead of the default plain box */
+[data-testid="stForm"] {
+    background: #FFFFFF; border: 1px solid var(--alx-border);
+    border-radius: 14px; padding: 1.6rem 1.6rem 1.2rem 1.6rem;
+}
+
+.stButton > button, [data-testid="stFormSubmitButton"] > button {
+    border-radius: 8px; font-weight: 600;
+}
+.stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] > button[kind="primary"] {
+    background: var(--alx-blue); border: none;
+}
+
+[data-testid="stMetric"] {
+    background: #FFFFFF; border: 1px solid var(--alx-border);
+    border-radius: 10px; padding: 0.75rem 1rem;
+}
+
+[data-testid="stExpander"] { border: 1px solid var(--alx-border); border-radius: 10px; }
+</style>
+<div class="alx-header"><span class="alx-word">alx</span><span class="alx-enterprise">Enterprise</span></div>
+<div class="alx-tagline">B2B Prospecting — source companies, qualify them, find decision-makers, and generate sales briefs. Powered by Apollo + LLM Gateway.</div>
+""", unsafe_allow_html=True)
 
 # Recovery: the pipeline saves progress to disk after every company/contact, not
 # just at the end — so a run that dies partway (dropped connection, app restart,
 # an API error) still leaves a file with whatever was completed. Surface any of
 # those here so the credits already spent on them aren't lost. Shared by both
-# modes below, since either can produce a checkpointed file.
+# tabs below, since either can produce a checkpointed file.
 existing_files = sorted(glob.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
 if existing_files:
     with st.expander(f"📂 Previous run files on this server ({len(existing_files)})"):
@@ -46,20 +112,12 @@ if not APOLLO_API_KEY or not LLM_GATEWAY_API_KEY:
     )
     st.stop()
 
-mode = st.radio(
-    "What do you want to do?",
-    ["Find New Companies", "Deep-Dive a Company"],
-    horizontal=True,
-    help="Find New Companies: search many companies by industry/size/location and qualify them. "
-         "Deep-Dive a Company: you already know the company — get a full research dossier on it "
-         "plus deep, meeting-ready research on its best-fit contacts."
-)
-st.divider()
+tab_search, tab_deep_dive = st.tabs(["🔍  Find New Companies", "🎯  Deep-Dive a Company"])
 
 # =============================================================================
-# MODE 1: Find New Companies (lead discovery — unchanged from before)
+# TAB 1: Find New Companies (lead discovery — logic unchanged from before)
 # =============================================================================
-if mode == "Find New Companies":
+with tab_search:
     EMPLOYEE_RANGE_LABELS = {
         "51,200": "51 – 200 employees",
         "201,500": "201 – 500 employees",
@@ -189,9 +247,9 @@ if mode == "Find New Companies":
             )
 
 # =============================================================================
-# MODE 2: Deep-Dive a Company (account research — you already know the company)
+# TAB 2: Deep-Dive a Company (account research — you already know the company)
 # =============================================================================
-else:
+with tab_deep_dive:
     st.caption(
         "You already know the company — this pulls a full research dossier on it, plus deep, "
         "meeting-ready research on its best-fit contacts (professional background, public presence, "
