@@ -6,6 +6,21 @@ from typing import Dict, Any, List
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AIClient")
 
+
+def _format_citations(response_json: Dict[str, Any]) -> str:
+    """
+    Search models (e.g. Perplexity sonar) return the real source URLs behind an
+    answer as a top-level `citations` array on the raw response — separate from
+    `choices[0].message.content`, so it was previously being discarded entirely.
+    The model already inline-cites like "...CEO of CIH Bank[1]"; numbering here
+    the same way lets that [1] actually be looked up against a real link.
+    """
+    citations = response_json.get("citations") or []
+    if not citations:
+        return ""
+    return "\n".join(f"[{i}] {url}" for i, url in enumerate(citations, start=1))
+
+
 class AIClient:
     """
     Routes every AI call through LLM Gateway (llmgateway.io) — a unified,
@@ -180,7 +195,8 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
                 "signals_found": result.get("signals_found", "No specific signals identified."),
                 "recent_developments": result.get("recent_developments", "No recent public developments found."),
                 "competitive_position": result.get("competitive_position", f"{name} operates in {industry}."),
-                "meeting_talking_points": result.get("meeting_talking_points", "")
+                "meeting_talking_points": result.get("meeting_talking_points", ""),
+                "sources": _format_citations(data)
             }
         except Exception as e:
             logger.error(f"AI deep company research error for {name}: {e}")
@@ -188,7 +204,8 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
                 "signals_found": f"Research unavailable: {str(e)}",
                 "recent_developments": "Not available.",
                 "competitive_position": f"{name} operates in {industry} in {location}.",
-                "meeting_talking_points": "Not available."
+                "meeting_talking_points": "Not available.",
+                "sources": ""
             }
 
     def select_best_contacts(
@@ -357,7 +374,8 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
                 "contact_insights": brief_json.get("contact_insights", f"Contact: {contact_name}, {contact_title} at {comp_name}."),
                 "opening_sales_angle": brief_json.get("opening_sales_angle", "Focus on workforce AI & digital skills modernization."),
                 "company_brief": brief_json.get("company_brief", f"{comp_name} is a key player in {industry} in {location}."),
-                "industry_position": brief_json.get("industry_position", "Digital transformation priority.")
+                "industry_position": brief_json.get("industry_position", "Digital transformation priority."),
+                "sources": _format_citations(data)
             }
         except Exception as e:
             logger.error(f"AI deep research error for {contact_name} at {comp_name}: {e}")
@@ -365,7 +383,8 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
                 "contact_insights": f"{contact_name} serves as {contact_title} at {comp_name}.",
                 "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
                 "company_brief": f"{comp_name} ({industry}) operates in {location}.",
-                "industry_position": "Industry digital journey."
+                "industry_position": "Industry digital journey.",
+                "sources": ""
             }
 
     def deep_contact_research(
@@ -448,7 +467,8 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 "public_presence": result.get("public_presence", "No public articles, interviews, or mentions found."),
                 "opening_sales_angle": result.get("opening_sales_angle", "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership."),
                 "company_brief": result.get("company_brief", f"{comp_name} ({industry}) operates in {location}."),
-                "meeting_prep_note": result.get("meeting_prep_note", "")
+                "meeting_prep_note": result.get("meeting_prep_note", ""),
+                "sources": _format_citations(data)
             }
         except Exception as e:
             logger.error(f"AI deep contact research error for {contact_name} at {comp_name}: {e}")
@@ -457,5 +477,6 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 "public_presence": "Research unavailable.",
                 "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
                 "company_brief": f"{comp_name} ({industry}) operates in {location}.",
-                "meeting_prep_note": ""
+                "meeting_prep_note": "",
+                "sources": ""
             }

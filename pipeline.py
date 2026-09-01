@@ -326,7 +326,8 @@ def run_pipeline(
                     "1. Contact Insights & Experience": deep_brief.get("contact_insights", ""),
                     "2. Tailored Sales Angle": deep_brief.get("opening_sales_angle", ""),
                     "3. Target Company Brief": deep_brief.get("company_brief", ""),
-                    "4. Industry Position & Market Insights": deep_brief.get("industry_position", "")
+                    "4. Industry Position & Market Insights": deep_brief.get("industry_position", ""),
+                    "Sources": deep_brief.get("sources", "")
                 }
 
                 contacts_briefs_records.append(contact_entry)
@@ -428,7 +429,8 @@ def run_company_deep_dive(
         "Signals Found": dossier.get("signals_found", ""),
         "Recent Developments": dossier.get("recent_developments", ""),
         "Competitive Position": dossier.get("competitive_position", ""),
-        "Meeting Talking Points": dossier.get("meeting_talking_points", "")
+        "Meeting Talking Points": dossier.get("meeting_talking_points", ""),
+        "Sources": dossier.get("sources", "")
     }
     company_sheet_records.append(company_record)
     checkpoint()
@@ -496,7 +498,8 @@ def run_company_deep_dive(
             "2. Public Presence (Articles/Interviews/Mentions)": research.get("public_presence", ""),
             "3. Opening Sales Angle": research.get("opening_sales_angle", ""),
             "4. Company Brief": research.get("company_brief", ""),
-            "5. Meeting Prep Note": research.get("meeting_prep_note", "")
+            "5. Meeting Prep Note": research.get("meeting_prep_note", ""),
+            "Sources": research.get("sources", "")
         }
 
         contacts_records.append(contact_entry)
@@ -620,7 +623,8 @@ def run_person_deep_dive(
         "2. Public Presence (Articles/Interviews/Mentions)": research.get("public_presence", ""),
         "3. Opening Sales Angle": research.get("opening_sales_angle", ""),
         "4. Company Brief": research.get("company_brief", ""),
-        "5. Meeting Prep Note": research.get("meeting_prep_note", "")
+        "5. Meeting Prep Note": research.get("meeting_prep_note", ""),
+        "Sources": research.get("sources", "")
     }
     contacts_records.append(contact_entry)
     checkpoint()
