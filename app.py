@@ -7,11 +7,11 @@ import streamlit as st
 # Must happen before importing config/pipeline: copy any matching Streamlit Cloud
 # "Secrets" into the environment so config.py (plain os.getenv, unchanged) picks
 # them up exactly like it would a local .env file.
-for _key in ("APOLLO_API_KEY", "LLM_GATEWAY_API_KEY", "LLM_GATEWAY_BASE_URL", "SEARCH_MODEL", "REASONING_MODEL", "OFFERING_DESCRIPTION"):
+for _key in ("APOLLO_API_KEY", "LLM_GATEWAY_API_KEY", "LLM_GATEWAY_BASE_URL", "SEARCH_MODEL", "REASONING_MODEL", "OFFERING_DESCRIPTION", "GOOGLE_SERVICE_ACCOUNT_JSON"):
     if _key in st.secrets:
         os.environ[_key] = str(st.secrets[_key])
 
-from config import APOLLO_API_KEY, LLM_GATEWAY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
+from config import APOLLO_API_KEY, LLM_GATEWAY_API_KEY, GOOGLE_SERVICE_ACCOUNT_JSON, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
 from pipeline import (
     run_pipeline,
     run_company_deep_dive,
@@ -20,6 +20,7 @@ from pipeline import (
     search_person_candidates,
     default_output_filename
 )
+from google_sheets_export import upload_to_google_sheets
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🎯", layout="centered")
 
@@ -31,6 +32,41 @@ def _load_logo_b64() -> str:
 
 
 _logo_b64 = _load_logo_b64()
+
+
+def _render_output_actions(output_path: str, key_prefix: str):
+    """
+    Download button (unchanged) plus an "Open in Google Sheets" button. Unlike
+    st.download_button (which streams the file client-side and doesn't need
+    surrounding code to run again), a plain st.button click triggers a full
+    script rerun — so the created Sheet's URL has to live in session_state to
+    survive that rerun, keyed per call site (key_prefix) so the three places
+    this is used (lead search, company deep-dive, person deep-dive) don't clash.
+    """
+    with open(output_path, "rb") as f:
+        st.download_button(
+            "⬇️ Download Excel Workbook",
+            data=f.read(),
+            file_name=os.path.basename(output_path),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            key=f"{key_prefix}_download_btn"
+        )
+
+    sheet_url_key = f"{key_prefix}_sheet_url"
+    existing_url = st.session_state.get(sheet_url_key)
+
+    if existing_url:
+        st.link_button("📊 Open in Google Sheets ↗", existing_url)
+    elif st.button("📊 Open in Google Sheets", key=f"{key_prefix}_sheet_btn"):
+        with st.spinner("Creating Google Sheet..."):
+            try:
+                st.session_state[sheet_url_key] = upload_to_google_sheets(
+                    output_path, os.path.basename(output_path), GOOGLE_SERVICE_ACCOUNT_JSON
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't create the Google Sheet: {e}")
 
 # -----------------------------------------------------------------------------
 # Brand styling — ALX's real logo and wordmark colors (deep navy "alx" + bright
@@ -257,6 +293,15 @@ with tab_search:
 
             status.update(label="Pipeline complete", state="complete")
 
+        st.session_state.search_result = result
+
+    # Kept outside `if submitted:` so the result (and its download / Google
+    # Sheets buttons) survive reruns triggered by clicking those buttons rather
+    # than vanishing the instant a non-form button is clicked (see
+    # _render_output_actions).
+    if st.session_state.get("search_result"):
+        result = st.session_state.search_result
+
         if not result["output_path"]:
             st.warning("No companies matched these filters — try broadening the industries or size range.")
         else:
@@ -270,14 +315,7 @@ with tab_search:
             c2.metric("Marked 'Go'", go_count)
             c3.metric("Contacts found", len(contacts))
 
-            with open(result["output_path"], "rb") as f:
-                st.download_button(
-                    "⬇️ Download Excel Workbook",
-                    data=f.read(),
-                    file_name=os.path.basename(result["output_path"]),
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
+            _render_output_actions(result["output_path"], key_prefix="search")
 
             st.dataframe(
                 [{"Company": c["Company Name"], "Status": c["AI Status"], "Industry": c["Industry"]} for c in companies],
@@ -384,31 +422,31 @@ with tab_deep_dive:
 
                     status.update(label="Research complete", state="complete")
 
-                if not result["output_path"]:
-                    st.warning(f"Couldn't retrieve full details for \"{comp_display_name}\" — try again or use its website domain instead.")
-                else:
-                    company = result["company"]
-                    contacts = result["contacts"]
+                st.session_state.dd_company_result = result
 
-                    st.subheader("Summary")
-                    c1, c2 = st.columns(2)
-                    c1.metric("Company", company["Company Name"])
-                    c2.metric("Contacts researched", len(contacts))
+        # Kept outside `if research_clicked:` so it survives reruns triggered by
+        # the download / Google Sheets buttons (see _render_output_actions).
+        if st.session_state.get("dd_company_result"):
+            result = st.session_state.dd_company_result
 
-                    with open(result["output_path"], "rb") as f:
-                        st.download_button(
-                            "⬇️ Download Excel Workbook",
-                            data=f.read(),
-                            file_name=os.path.basename(result["output_path"]),
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="primary"
-                        )
+            if not result["output_path"]:
+                st.warning("Couldn't retrieve full details for that company — try again or use its website domain instead.")
+            else:
+                company = result["company"]
+                contacts = result["contacts"]
 
-                    if contacts:
-                        st.dataframe(
-                            [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
-                            width="stretch"
-                        )
+                st.subheader("Summary")
+                c1, c2 = st.columns(2)
+                c1.metric("Company", company["Company Name"])
+                c2.metric("Contacts researched", len(contacts))
+
+                _render_output_actions(result["output_path"], key_prefix="dd_company")
+
+                if contacts:
+                    st.dataframe(
+                        [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
+                        width="stretch"
+                    )
 
     # =========================================================================
     # MODE: Person — deep research on ONE already-identified person at an
@@ -507,27 +545,27 @@ with tab_deep_dive:
 
                     status.update(label="Research complete", state="complete")
 
-                if not result["output_path"]:
-                    st.warning(f"Couldn't retrieve full details for \"{person_display_name}\" — try again.")
-                else:
-                    contacts = result["contacts"]
+                st.session_state.dd_person_result = result
 
-                    st.subheader("Summary")
-                    c1, c2 = st.columns(2)
-                    c1.metric("Company", result["company"]["Company Name"])
-                    c2.metric("Contact", contacts[0]["Contact Name"] if contacts else "N/A")
+        # Kept outside `if pd_research_clicked:` so it survives reruns triggered
+        # by the download / Google Sheets buttons (see _render_output_actions).
+        if st.session_state.get("dd_person_result"):
+            result = st.session_state.dd_person_result
 
-                    with open(result["output_path"], "rb") as f:
-                        st.download_button(
-                            "⬇️ Download Excel Workbook",
-                            data=f.read(),
-                            file_name=os.path.basename(result["output_path"]),
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="primary"
-                        )
+            if not result["output_path"]:
+                st.warning("Couldn't retrieve full details for that person — try again.")
+            else:
+                contacts = result["contacts"]
 
-                    if contacts:
-                        st.dataframe(
-                            [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
-                            width="stretch"
-                        )
+                st.subheader("Summary")
+                c1, c2 = st.columns(2)
+                c1.metric("Company", result["company"]["Company Name"])
+                c2.metric("Contact", contacts[0]["Contact Name"] if contacts else "N/A")
+
+                _render_output_actions(result["output_path"], key_prefix="dd_person")
+
+                if contacts:
+                    st.dataframe(
+                        [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
+                        width="stretch"
+                    )
