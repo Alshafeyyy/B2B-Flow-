@@ -166,6 +166,46 @@ class ApolloClient:
         logger.warning(f"No contacts retrieved for {company_name or domain or organization_id} after all attempts.")
         return []
 
+    def find_person_candidates(
+        self,
+        person_name: str,
+        organization_id: Optional[str] = None,
+        domain: Optional[str] = None,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Person Deep-Dive: searches for a specific person by name within ONE already-
+        known company's roster — same endpoint as list_company_contacts, just with a
+        name keyword added. Deliberately scoped to a company: Apollo's people search
+        by name alone, with no company context, returns far too many unrelated global
+        matches to be a useful "find this one person" tool.
+        """
+        url = f"{self.BASE_URL}/mixed_people/api_search"
+        person_name = (person_name or "").strip()
+
+        payload_attempts = []
+        if domain:
+            payload_attempts.append({"page": 1, "per_page": limit, "q_organization_domains": domain, "q_keywords": person_name})
+        if organization_id:
+            payload_attempts.append({"page": 1, "per_page": limit, "organization_ids": [str(organization_id)], "q_keywords": person_name})
+
+        for i, payload in enumerate(payload_attempts, 1):
+            try:
+                logger.info(f"Searching for person '{person_name}' (Attempt {i})...")
+                response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    people = data.get("people", []) or data.get("contacts", [])
+                    if people:
+                        logger.info(f"Found {len(people)} candidate(s) for '{person_name}'.")
+                        return people
+            except Exception as e:
+                logger.error(f"Error searching for person '{person_name}' on Attempt {i}: {e}")
+                continue
+
+        logger.warning(f"No person candidates found for '{person_name}'.")
+        return []
+
     def bulk_enrich_people(
         self,
         people: List[Dict[str, Any]],

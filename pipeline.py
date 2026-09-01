@@ -44,6 +44,29 @@ def search_company_candidates(query: str, limit: int = 5) -> List[Dict[str, Any]
     return apollo.find_company_candidates(query, limit=limit)
 
 
+def search_person_candidates(company_query: str, person_name: str, limit: int = 5) -> Dict[str, Any]:
+    """
+    Person Deep-Dive: resolves the one known company (same exact lookup as Account
+    Deep-Dive's enrich_company) then searches its real roster for name matches.
+    Returns both the resolved company and the person candidates so the UI can show
+    which company was actually matched — letting the user catch a wrong resolution
+    (e.g. an abbreviated name matching the wrong company, see find_company_candidates)
+    before spending any research credits.
+    """
+    if not APOLLO_API_KEY:
+        raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    apollo = ApolloClient(api_key=APOLLO_API_KEY)
+
+    comp_raw = apollo.enrich_company(company_query)
+    if not comp_raw:
+        return {"company": None, "candidates": []}
+
+    comp_id = comp_raw.get("id") or comp_raw.get("organization_id")
+    domain = comp_raw.get("primary_domain") or comp_raw.get("domain", "")
+    candidates = apollo.find_person_candidates(person_name, organization_id=comp_id, domain=domain, limit=limit)
+    return {"company": comp_raw, "candidates": candidates}
+
+
 def run_pipeline(
     locations: List[str],
     keywords: List[str],
@@ -488,6 +511,127 @@ def run_company_deep_dive(
     progress("🎉 DEEP-DIVE COMPLETE!")
     progress(f"📊 Company Dossier: {comp_name}")
     progress(f"👥 Contacts Researched: {len(contacts_records)}")
+    progress(f"📁 Master Excel Workbook: {out_file}")
+
+    return {
+        "output_path": out_file,
+        "company": company_record,
+        "contacts": contacts_records
+    }
+
+
+def run_person_deep_dive(
+    company_raw: Dict[str, Any],
+    person_raw: Dict[str, Any],
+    output_path: str,
+    on_progress: Optional[Callable[[str], None]] = None
+) -> Dict[str, Any]:
+    """
+    Person Deep-Dive: deep research on ONE already-identified person at an already-
+    known company. Both `company_raw` and `person_raw` are expected to already be
+    the exact confirmed records from search_person_candidates (not re-searched by
+    name here — names aren't unique enough to re-resolve safely, unlike a domain).
+    Deliberately skips the full AI company dossier that run_company_deep_dive pays
+    for — here the company is just context for the contact brief, not the target
+    of research — so this is cheaper and faster than a full Account Deep-Dive. For
+    researching a company's best-fit contacts from scratch, see run_company_deep_dive.
+    """
+    def progress(msg: str):
+        if on_progress:
+            on_progress(msg)
+
+    company_sheet_records: List[Dict[str, Any]] = []
+    contacts_records: List[Dict[str, Any]] = []
+
+    def checkpoint():
+        try:
+            export_pipeline_to_excel(
+                company_sheet_records, contacts_records, output_path,
+                sheet1_name="Company Snapshot", sheet2_name="Contact Research"
+            )
+        except Exception as e:
+            logger.warning(f"Checkpoint save failed (continuing run): {e}")
+
+    if not APOLLO_API_KEY:
+        raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    if not LLM_GATEWAY_API_KEY:
+        raise RuntimeError("LLM_GATEWAY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+
+    apollo = ApolloClient(api_key=APOLLO_API_KEY)
+    ai = AIClient(api_key=LLM_GATEWAY_API_KEY, base_url=LLM_GATEWAY_BASE_URL)
+
+    comp_name = company_raw.get("name", "Unknown Company")
+    domain = company_raw.get("primary_domain") or company_raw.get("domain", "")
+    industry = company_raw.get("industry", "Unknown")
+    employees = company_raw.get("estimated_num_employees", company_raw.get("num_employees", "Unknown"))
+    city = company_raw.get("city", "")
+    country = company_raw.get("country", "")
+    location = f"{city}, {country}".strip(", ") or "Morocco"
+    website = company_raw.get("website_url", f"https://{domain}" if domain else "")
+    short_desc = company_raw.get("short_description", "")
+
+    company_record = {
+        "Company Name": comp_name,
+        "Domain": domain,
+        "Industry": industry,
+        "Employees": employees,
+        "Location": location,
+        "Website": website,
+        "Company Description": short_desc
+    }
+    company_sheet_records.append(company_record)
+    checkpoint()
+
+    person_display_name = person_raw.get("name", f"{person_raw.get('first_name', '')} {person_raw.get('last_name', '')}").strip()
+    progress(f"🔓 Unlocking contact details for {person_display_name}...")
+    enriched_list = apollo.bulk_enrich_people([person_raw], reveal_personal_emails=False)
+    c = enriched_list[0] if enriched_list else {**person_raw, "_enriched": False}
+
+    contact_name = c.get("name", f"{c.get('first_name', '')} {c.get('last_name', '')}").strip()
+    job_title = c.get("title", "Executive")
+    email = c.get("email") or "No verified email found"
+    linkedin_url = c.get("linkedin_url") or "Not available"
+
+    phone_list = c.get("phone_numbers", [])
+    phone_str = ""
+    if phone_list and isinstance(phone_list, list):
+        nums = [p.get("raw_number") or p.get("sanitized_number") or p.get("number") for p in phone_list if (p.get("raw_number") or p.get("sanitized_number") or p.get("number"))]
+        phone_str = ", ".join(nums)
+    elif c.get("sanitized_phone_number"):
+        phone_str = c.get("sanitized_phone_number")
+    else:
+        phone_str = c.get("phone", "Not available")
+    if not phone_str:
+        phone_str = "Not available"
+
+    progress(f"📝 Researching {contact_name} in depth (professional background, public presence)...")
+    research = ai.deep_contact_research(c, company_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
+
+    contact_entry = {
+        "Company Name": comp_name,
+        "Contact Name": contact_name,
+        "Job Title": job_title,
+        "Email": email,
+        "Phone Number": phone_str,
+        "LinkedIn URL": linkedin_url,
+        "Enrichment Status": "Enriched" if c.get("_enriched") else "Not Matched",
+        "Why This Contact": "Directly requested by name.",
+        "1. Professional Background": research.get("professional_background", ""),
+        "2. Public Presence (Articles/Interviews/Mentions)": research.get("public_presence", ""),
+        "3. Opening Sales Angle": research.get("opening_sales_angle", ""),
+        "4. Company Brief": research.get("company_brief", ""),
+        "5. Meeting Prep Note": research.get("meeting_prep_note", "")
+    }
+    contacts_records.append(contact_entry)
+    checkpoint()
+    progress(f"   ✓ Researched: {contact_name}")
+
+    out_file = export_pipeline_to_excel(
+        company_sheet_records, contacts_records, output_path,
+        sheet1_name="Company Snapshot", sheet2_name="Contact Research"
+    )
+
+    progress("🎉 PERSON DEEP-DIVE COMPLETE!")
     progress(f"📁 Master Excel Workbook: {out_file}")
 
     return {
