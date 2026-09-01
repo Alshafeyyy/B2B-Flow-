@@ -6,17 +6,17 @@ import streamlit as st
 # Must happen before importing config/pipeline: copy any matching Streamlit Cloud
 # "Secrets" into the environment so config.py (plain os.getenv, unchanged) picks
 # them up exactly like it would a local .env file.
-for _key in ("APOLLO_API_KEY", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "OFFERING_DESCRIPTION"):
+for _key in ("APOLLO_API_KEY", "LLM_GATEWAY_API_KEY", "LLM_GATEWAY_BASE_URL", "SEARCH_MODEL", "REASONING_MODEL", "OFFERING_DESCRIPTION"):
     if _key in st.secrets:
         os.environ[_key] = str(st.secrets[_key])
 
-from config import APOLLO_API_KEY, PERPLEXITY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
+from config import APOLLO_API_KEY, LLM_GATEWAY_API_KEY, DEFAULT_EMPLOYEE_RANGES, DEFAULT_INDUSTRIES
 from pipeline import run_pipeline, run_company_deep_dive, search_company_candidates, default_output_filename
 
 st.set_page_config(page_title="ALX Enterprise Prospecting", page_icon="🏢", layout="centered")
 
 st.title("🏢 ALX Enterprise B2B Prospecting")
-st.caption("Source companies, AI-qualify them, find decision-makers, and generate sales briefs — powered by Apollo + Perplexity.")
+st.caption("Source companies, AI-qualify them, find decision-makers, and generate sales briefs — powered by Apollo + LLM Gateway.")
 
 # Recovery: the pipeline saves progress to disk after every company/contact, not
 # just at the end — so a run that dies partway (dropped connection, app restart,
@@ -38,10 +38,10 @@ if existing_files:
                     key=f"recover_{path}"
                 )
 
-if not APOLLO_API_KEY or not PERPLEXITY_API_KEY:
+if not APOLLO_API_KEY or not LLM_GATEWAY_API_KEY:
     st.error(
         "Missing API keys. If you're running this locally, set APOLLO_API_KEY and "
-        "PERPLEXITY_API_KEY in a .env file. If this app is deployed, add them under "
+        "LLM_GATEWAY_API_KEY in a .env file. If this app is deployed, add them under "
         "your app's **Settings → Secrets** in Streamlit Community Cloud."
     )
     st.stop()
@@ -92,7 +92,7 @@ if mode == "Find New Companies":
             "Number of 'Go' companies wanted", min_value=1, max_value=20, value=5, step=1,
             help="This is the target Go count, not raw companies scanned — Apollo will be searched as deep as "
                  "needed (up to 5x this number of candidates) to find that many qualified companies. "
-                 "Each candidate scanned spends Apollo + Perplexity credits, so worst-case cost scales with this too."
+                 "Each candidate scanned spends Apollo + AI credits, so worst-case cost scales with this too."
         )
 
         with st.expander("Advanced filters (optional)"):

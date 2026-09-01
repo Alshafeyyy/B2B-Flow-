@@ -4,16 +4,25 @@ import json
 from typing import Dict, Any, List
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("PerplexityClient")
+logger = logging.getLogger("AIClient")
 
-class PerplexityClient:
-    API_URL = "https://api.perplexity.ai/chat/completions"
+class AIClient:
+    """
+    Routes every AI call through LLM Gateway (llmgateway.io) — a unified,
+    OpenAI-compatible proxy in front of 40+ providers — so each method below can
+    take its own `model` per call instead of one fixed model for everything. Search
+    methods (qualification, deep research) are meant to be called with a real-time
+    web-search-capable model (e.g. Perplexity's "sonar"); select_best_contacts only
+    reasons over an already-provided roster list and never needed search, so it's
+    meant to be called with a cheap plain-reasoning model instead (e.g. Groq's
+    "gpt-oss-20b") — see config.py's SEARCH_MODEL / REASONING_MODEL.
+    """
 
-    def __init__(self, api_key: str, model: str = "sonar"):
+    def __init__(self, api_key: str, base_url: str = "https://api.llmgateway.io/v1"):
         self.api_key = api_key
-        self.model = model
+        self.base_url = base_url.rstrip("/")
         if not self.api_key:
-            logger.warning("Perplexity API Key is missing! Set PERPLEXITY_API_KEY in your .env file.")
+            logger.warning("LLM Gateway API Key is missing! Set LLM_GATEWAY_API_KEY in your .env file.")
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -21,7 +30,10 @@ class PerplexityClient:
             "Content-Type": "application/json"
         }
 
-    def qualify_company_and_suggest_roles(self, company: Dict[str, Any], offering_context: str) -> Dict[str, Any]:
+    def _url(self) -> str:
+        return f"{self.base_url}/chat/completions"
+
+    def qualify_company_and_suggest_roles(self, company: Dict[str, Any], offering_context: str, model: str) -> Dict[str, Any]:
         """
         Phase 1 AI Assessment: Screens company fit (Go / No-Go / Review + Reason) AND suggests
         the ideal target contact job roles to reach out to inside this specific company.
@@ -62,7 +74,7 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
 }}"""
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are an analytical B2B sales screening assistant. Return valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -71,7 +83,7 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=30)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=30)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -94,14 +106,14 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
                 "suggested_roles": result.get("suggested_roles", ["HR Director", "Head of L&D", "COO", "CTO", "Head of Digital"])
             }
         except Exception as e:
-            logger.error(f"Perplexity company qualification error for {name}: {e}")
+            logger.error(f"AI company qualification error for {name}: {e}")
             return {
                 "status": "Review",
                 "reason": f"AI Evaluation completed with fallback: {str(e)}",
                 "suggested_roles": ["Human Resources Director", "Head of L&D", "COO", "Chief Digital Officer", "CTO"]
             }
 
-    def deep_company_research(self, company: Dict[str, Any], offering_context: str) -> Dict[str, str]:
+    def deep_company_research(self, company: Dict[str, Any], offering_context: str, model: str) -> Dict[str, str]:
         """
         Account Deep-Dive: produces a full research dossier on ONE specific, already-
         chosen company — recent news, initiatives, leadership context, and competitive
@@ -146,7 +158,7 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
 }}"""
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are a thorough enterprise account researcher. Return valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -155,7 +167,7 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=45)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=45)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -171,7 +183,7 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
                 "meeting_talking_points": result.get("meeting_talking_points", "")
             }
         except Exception as e:
-            logger.error(f"Perplexity deep company research error for {name}: {e}")
+            logger.error(f"AI deep company research error for {name}: {e}")
             return {
                 "signals_found": f"Research unavailable: {str(e)}",
                 "recent_developments": "Not available.",
@@ -184,6 +196,7 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
         company: Dict[str, Any],
         candidates: List[Dict[str, Any]],
         offering_context: str,
+        model: str,
         suggested_roles: List[str] = None,
         max_selections: int = 5
     ) -> List[Dict[str, Any]]:
@@ -192,7 +205,9 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
         job title only — nobody was pre-filtered by title, since Apollo's title match
         is fairly literal and misses real people whose title differs from AI-guessed
         phrasing), selects the best-fit people to reach out to. Returns the selected
-        subset of `candidates`, each tagged with `_selection_reason`.
+        subset of `candidates`, each tagged with `_selection_reason`. Pure reasoning
+        over an already-provided list — never needs web search, so this is meant to
+        be called with a cheap plain-reasoning model (see config.REASONING_MODEL).
         """
         name = company.get("name", "Unknown Company")
         industry = company.get("industry", "Unknown")
@@ -228,7 +243,7 @@ Respond strictly with valid JSON (no markdown code blocks, no extra text):
 }}"""
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are an analytical B2B sales targeting assistant. Return valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -237,7 +252,7 @@ Respond strictly with valid JSON (no markdown code blocks, no extra text):
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=30)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=30)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -259,7 +274,7 @@ Respond strictly with valid JSON (no markdown code blocks, no extra text):
             return picked
 
         except Exception as e:
-            logger.error(f"Perplexity contact selection error for {name}: {e}")
+            logger.error(f"AI contact selection error for {name}: {e}")
             # Fail-soft: take the first max_selections roster entries rather than
             # losing this company's contacts entirely.
             return [
@@ -271,7 +286,8 @@ Respond strictly with valid JSON (no markdown code blocks, no extra text):
         self,
         contact: Dict[str, Any],
         company: Dict[str, Any],
-        offering_context: str
+        offering_context: str,
+        model: str
     ) -> Dict[str, str]:
         """
         Phase 2 AI Research Engine: Performs deep research on the contact and company, returning
@@ -319,7 +335,7 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
 }}"""
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are a professional enterprise sales intelligence researcher. Return valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -328,7 +344,7 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=45)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=45)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -344,7 +360,7 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
                 "industry_position": brief_json.get("industry_position", "Digital transformation priority.")
             }
         except Exception as e:
-            logger.error(f"Perplexity deep research error for {contact_name} at {comp_name}: {e}")
+            logger.error(f"AI deep research error for {contact_name} at {comp_name}: {e}")
             return {
                 "contact_insights": f"{contact_name} serves as {contact_title} at {comp_name}.",
                 "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
@@ -356,7 +372,8 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
         self,
         contact: Dict[str, Any],
         company: Dict[str, Any],
-        offering_context: str
+        offering_context: str,
+        model: str
     ) -> Dict[str, str]:
         """
         Account Deep-Dive: a deeper version of generate_deep_contact_brief for the
@@ -408,7 +425,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
 }}"""
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are a professional enterprise sales intelligence researcher. Stay strictly within someone's professional public record. Return valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -417,7 +434,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, headers=self._headers(), timeout=45)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=45)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -434,7 +451,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 "meeting_prep_note": result.get("meeting_prep_note", "")
             }
         except Exception as e:
-            logger.error(f"Perplexity deep contact research error for {contact_name} at {comp_name}: {e}")
+            logger.error(f"AI deep contact research error for {contact_name} at {comp_name}: {e}")
             return {
                 "professional_background": f"{contact_name} serves as {contact_title} at {comp_name}.",
                 "public_presence": "Research unavailable.",

@@ -139,7 +139,7 @@ class ApolloClient:
         bulk_enrich_people). Deliberately has no person_titles/seniority filter:
         Apollo's title matching is fairly literal and AI-guessed titles routinely
         miss real people, so instead the AI selects the best-fit people from this
-        real roster afterward (see PerplexityClient.select_best_contacts).
+        real roster afterward (see AIClient.select_best_contacts).
         """
         url = f"{self.BASE_URL}/mixed_people/api_search"
 

@@ -7,13 +7,15 @@ from tqdm import tqdm
 
 from config import (
     APOLLO_API_KEY,
-    PERPLEXITY_API_KEY,
-    PERPLEXITY_MODEL,
+    LLM_GATEWAY_API_KEY,
+    LLM_GATEWAY_BASE_URL,
+    SEARCH_MODEL,
+    REASONING_MODEL,
     OFFERING_DESCRIPTION,
     DEFAULT_CONTACT_TITLES
 )
 from apollo_client import ApolloClient
-from perplexity_client import PerplexityClient
+from ai_client import AIClient
 from exporter import export_pipeline_to_excel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -78,11 +80,11 @@ def run_pipeline(
 
     if not APOLLO_API_KEY:
         raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
-    if not PERPLEXITY_API_KEY:
-        raise RuntimeError("PERPLEXITY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    if not LLM_GATEWAY_API_KEY:
+        raise RuntimeError("LLM_GATEWAY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
 
     apollo = ApolloClient(api_key=APOLLO_API_KEY)
-    perplexity = PerplexityClient(api_key=PERPLEXITY_API_KEY, model=PERPLEXITY_MODEL)
+    ai = AIClient(api_key=LLM_GATEWAY_API_KEY, base_url=LLM_GATEWAY_BASE_URL)
 
     # -------------------------------------------------------------------------
     # PHASE 1: Company Sourcing & AI Qualification
@@ -90,7 +92,7 @@ def run_pipeline(
     # `limit` is the target number of 'Go' companies, not raw companies fetched.
     # Apollo is paginated and each candidate is AI-qualified as it's found, until
     # `limit` Go companies are collected or the scan budget (5x the target, to
-    # keep worst-case Perplexity cost bounded) is exhausted. Every company scanned
+    # keep worst-case AI cost bounded) is exhausted. Every company scanned
     # — Go or not — still lands in the Company Qualification sheet as an audit trail.
     scan_cap = limit * 5
     progress(f"🏢 PHASE 1: Sourcing companies in {locations} until {limit} are marked 'Go' (scanning up to {scan_cap} candidates)...")
@@ -152,8 +154,8 @@ def run_pipeline(
             website = comp.get("website_url", f"https://{domain}" if domain else "")
             short_desc = comp.get("short_description", "")
 
-            # AI Qualification & Target Role Suggestions
-            ai_res = perplexity.qualify_company_and_suggest_roles(comp, OFFERING_DESCRIPTION)
+            # AI Qualification & Target Role Suggestions (needs real-time web search)
+            ai_res = ai.qualify_company_and_suggest_roles(comp, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
             status = ai_res.get("status", "Review")
             reason = ai_res.get("reason", "")
             suggested_roles = ai_res.get("suggested_roles", DEFAULT_CONTACT_TITLES)
@@ -244,8 +246,10 @@ def run_pipeline(
                 checkpoint()
                 continue
 
-            selected = perplexity.select_best_contacts(
-                comp_raw, roster, OFFERING_DESCRIPTION, suggested_roles, max_selections=5
+            # Pure reasoning over an already-provided roster list — never needs
+            # web search, so this runs on the cheap reasoning model, not SEARCH_MODEL.
+            selected = ai.select_best_contacts(
+                comp_raw, roster, OFFERING_DESCRIPTION, REASONING_MODEL, suggested_roles, max_selections=5
             )
 
             for c in selected:
@@ -285,7 +289,7 @@ def run_pipeline(
                 if not phone_str:
                     phone_str = "Not available"
 
-                deep_brief = perplexity.generate_deep_contact_brief(c, comp_raw, OFFERING_DESCRIPTION)
+                deep_brief = ai.generate_deep_contact_brief(c, comp_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
 
                 contact_entry = {
                     "Company Name": comp_name,
@@ -354,11 +358,11 @@ def run_company_deep_dive(
 
     if not APOLLO_API_KEY:
         raise RuntimeError("APOLLO_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
-    if not PERPLEXITY_API_KEY:
-        raise RuntimeError("PERPLEXITY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
+    if not LLM_GATEWAY_API_KEY:
+        raise RuntimeError("LLM_GATEWAY_API_KEY missing — configure it in .env (local) or Secrets (deployed).")
 
     apollo = ApolloClient(api_key=APOLLO_API_KEY)
-    perplexity = PerplexityClient(api_key=PERPLEXITY_API_KEY, model=PERPLEXITY_MODEL)
+    ai = AIClient(api_key=LLM_GATEWAY_API_KEY, base_url=LLM_GATEWAY_BASE_URL)
 
     # -------------------------------------------------------------------------
     # Look up the one company
@@ -388,7 +392,7 @@ def run_company_deep_dive(
     # Deep company research
     # -------------------------------------------------------------------------
     progress(f"📊 Researching {comp_name} in depth...")
-    dossier = perplexity.deep_company_research(comp_raw, OFFERING_DESCRIPTION)
+    dossier = ai.deep_company_research(comp_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
 
     company_record = {
         "Company Name": comp_name,
@@ -424,14 +428,14 @@ def run_company_deep_dive(
         return {"output_path": out_file, "company": company_record, "contacts": []}
 
     progress(f"   Found {len(roster)} people on file. Selecting best-fit contacts...")
-    selected = perplexity.select_best_contacts(comp_raw, roster, OFFERING_DESCRIPTION, None, max_selections=5)
+    selected = ai.select_best_contacts(comp_raw, roster, OFFERING_DESCRIPTION, REASONING_MODEL, None, max_selections=5)
 
     progress(f"🔓 Unlocking contact details for {len(selected)} selected people...")
     enriched = apollo.bulk_enrich_people(selected, reveal_personal_emails=False)
 
     # -------------------------------------------------------------------------
     # Deep individual research per selected contact (professional record only —
-    # see PerplexityClient.deep_contact_research for the explicit scope boundary)
+    # see AIClient.deep_contact_research for the explicit scope boundary)
     # -------------------------------------------------------------------------
     progress(f"📝 Researching {len(enriched)} contacts in depth (professional background, public presence)...")
 
@@ -454,7 +458,7 @@ def run_company_deep_dive(
         if not phone_str:
             phone_str = "Not available"
 
-        research = perplexity.deep_contact_research(c, comp_raw, OFFERING_DESCRIPTION)
+        research = ai.deep_contact_research(c, comp_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
 
         contact_entry = {
             "Company Name": comp_name,

@@ -4,8 +4,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
-PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")
+
+# All AI calls route through LLM Gateway (llmgateway.io) — a unified,
+# OpenAI-compatible proxy in front of 40+ providers — so each pipeline stage can
+# use whichever model actually fits it, rather than one fixed model for everything.
+LLM_GATEWAY_API_KEY = os.getenv("LLM_GATEWAY_API_KEY", "")
+LLM_GATEWAY_BASE_URL = os.getenv("LLM_GATEWAY_BASE_URL", "https://api.llmgateway.io/v1")
+
+# Used for qualification + all deep research (needs real-time web search): Perplexity
+# sonar, $1/$1 per M tokens + a flat $0.005/request. Kept off sonar-pro deliberately —
+# 15x pricier on output for a quality delta that isn't worth roughly halving how many
+# runs a small budget affords.
+SEARCH_MODEL = os.getenv("SEARCH_MODEL", "sonar")
+
+# Used only for contact selection (reasoning over an already-provided roster list —
+# never needed web search): Groq gpt-oss-20b, $0.1/$0.5 per M tokens, no flat
+# per-request fee, native JSON output. Over 20x cheaper than sonar for this one call.
+REASONING_MODEL = os.getenv("REASONING_MODEL", "gpt-oss-20b")
 
 OFFERING_DESCRIPTION = os.getenv(
     "OFFERING_DESCRIPTION",
