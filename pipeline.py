@@ -10,6 +10,7 @@ from config import (
     LLM_GATEWAY_API_KEY,
     LLM_GATEWAY_BASE_URL,
     SEARCH_MODEL,
+    DEEP_RESEARCH_MODEL,
     REASONING_MODEL,
     OFFERING_DESCRIPTION,
     DEFAULT_CONTACT_TITLES
@@ -416,7 +417,7 @@ def run_company_deep_dive(
     # Deep company research
     # -------------------------------------------------------------------------
     progress(f"📊 Researching {comp_name} in depth...")
-    dossier = ai.deep_company_research(comp_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
+    dossier = ai.deep_company_research(comp_raw, OFFERING_DESCRIPTION, model=DEEP_RESEARCH_MODEL)
 
     company_record = {
         "Company Name": comp_name,
@@ -428,6 +429,7 @@ def run_company_deep_dive(
         "Company Description": short_desc,
         "Signals Found": dossier.get("signals_found", ""),
         "Recent Developments": dossier.get("recent_developments", ""),
+        "Leadership & Organization": dossier.get("leadership_and_organization", ""),
         "Competitive Position": dossier.get("competitive_position", ""),
         "Meeting Talking Points": dossier.get("meeting_talking_points", ""),
         "Sources": dossier.get("sources", "")
@@ -483,7 +485,7 @@ def run_company_deep_dive(
         if not phone_str:
             phone_str = "Not available"
 
-        research = ai.deep_contact_research(c, comp_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
+        research = ai.deep_contact_research(c, comp_raw, OFFERING_DESCRIPTION, model=DEEP_RESEARCH_MODEL)
 
         contact_entry = {
             "Company Name": comp_name,
@@ -608,7 +610,7 @@ def run_person_deep_dive(
         phone_str = "Not available"
 
     progress(f"📝 Researching {contact_name} in depth (professional background, public presence)...")
-    research = ai.deep_contact_research(c, company_raw, OFFERING_DESCRIPTION, model=SEARCH_MODEL)
+    research = ai.deep_contact_research(c, company_raw, OFFERING_DESCRIPTION, model=DEEP_RESEARCH_MODEL)
 
     contact_entry = {
         "Company Name": comp_name,

@@ -11,11 +11,21 @@ APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "")
 LLM_GATEWAY_API_KEY = os.getenv("LLM_GATEWAY_API_KEY", "")
 LLM_GATEWAY_BASE_URL = os.getenv("LLM_GATEWAY_BASE_URL", "https://api.llmgateway.io/v1")
 
-# Used for qualification + all deep research (needs real-time web search): Perplexity
-# sonar, $1/$1 per M tokens + a flat $0.005/request. Kept off sonar-pro deliberately —
-# 15x pricier on output for a quality delta that isn't worth roughly halving how many
-# runs a small budget affords.
+# Used for bulk qualification + lead-discovery contact briefs (both run many times
+# per pipeline run, across many companies): Perplexity sonar, $1/$1 per M tokens +
+# a flat $0.005/request. Kept off sonar-pro here deliberately — 15x pricier on
+# output for a quality delta that isn't worth roughly halving how many bulk runs a
+# small budget affords, and this stage doesn't need sonar-pro's extra depth anyway.
 SEARCH_MODEL = os.getenv("SEARCH_MODEL", "sonar")
+
+# Used only for the Deep-Dive tab's two research calls (deep_company_research,
+# deep_contact_research) — a single, deliberately chosen target, not a bulk scan,
+# so it's worth paying for real depth: Perplexity sonar-pro, $3/$15 per M tokens +
+# a flat $0.005/request, 200K context (vs sonar's 130K) and genuinely more thorough
+# multi-query search per Perplexity's own docs. Measured live against a real
+# contact: ~$0.06/call (897 prompt + 3402 completion tokens) — a full company
+# deep-dive (1 dossier + up to 5 contacts) runs well under $0.50 worst case.
+DEEP_RESEARCH_MODEL = os.getenv("DEEP_RESEARCH_MODEL", "sonar-pro")
 
 # Used only for contact selection (reasoning over an already-provided roster list —
 # never needed web search): Groq gpt-oss-20b, $0.1/$0.5 per M tokens, no flat

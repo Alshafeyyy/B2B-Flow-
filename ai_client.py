@@ -145,7 +145,7 @@ Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no 
         short_desc = company.get("short_description", company.get("snippet", "No description provided"))
         website = company.get("website_url", "")
 
-        prompt = f"""You are a senior B2B account researcher for ALX Enterprise Morocco, preparing a deep research dossier ahead of a real meeting with this company.
+        prompt = f"""You are a senior B2B account researcher for ALX Enterprise Morocco, preparing an EXHAUSTIVE deep research dossier ahead of a real meeting with this company. This is a one-off deep dive on a single, deliberately chosen company — go as deep as real public information allows. Shallow, generic output is a failure here.
 
 OUR OFFERING:
 {offering_context}
@@ -158,31 +158,41 @@ TARGET COMPANY:
 - Website: {website}
 - Description: {short_desc}
 
-Perform real public web research on this specific company. Produce a genuine, detailed dossier — not generic filler — covering:
-1. Which of the 8 organizational signals from OUR OFFERING this company shows real evidence of (company-specific news/initiatives where findable, sector-level evidence otherwise), and why that matters for them specifically.
-2. Recent developments: news, initiatives, leadership changes, expansions, or public strategic statements from the last 1-2 years.
-3. Competitive/industry position: where this company sits versus peers — cover whichever dimension the evidence actually supports (digital/AI maturity, operational execution, talent/retention, innovation capacity, data-driven decision-making), not only digital/AI.
-4. Concrete, meeting-ready talking points: 2-3 specific things worth raising in a real conversation with this company, each tied to what was actually found AND naming the specific real ALX offering that fits (using the signal-to-offering table in OUR OFFERING — the real catalog spans 4 equal Academy themes, 6 workshops, and Leadership Xcelerator; do not default to AI-themed offerings when the evidence points elsewhere).
+Research this company from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Actively look into: recent company news and press coverage, financial results/performance if public, leadership team and any recent executive moves, hiring patterns and job postings, digital/technology/AI initiatives, public strategic statements or interviews from executives, industry/analyst reports that mention them, partnerships or major clients, awards or recognitions, and anything notable from the last 2-3 years specifically.
 
-Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no extra text):
+Produce a genuine, detailed dossier covering:
+1. Which of the 8 organizational signals from OUR OFFERING this company shows real evidence of (company-specific news/initiatives where findable, sector-level evidence otherwise), and why that matters for them specifically.
+2. Recent developments: news, initiatives, leadership changes, expansions, financial results, or public strategic statements from the last 2-3 years — be specific with dates, numbers, and names, not vague summaries.
+3. Leadership & organizational context: key executives (names and titles where findable), ownership structure (public/private/family-owned/PE-backed/state-owned), and any notable recent leadership hires or departures.
+4. Competitive/industry position: where this company sits versus peers — cover whichever dimension the evidence actually supports (digital/AI maturity, operational execution, talent/retention, innovation capacity, data-driven decision-making), not only digital/AI.
+5. Concrete, meeting-ready talking points: 3-4 specific things worth raising in a real conversation with this company, each tied to what was actually found AND naming the specific real ALX offering that fits (using the signal-to-offering table in OUR OFFERING — the real catalog spans 4 equal Academy themes, 6 workshops, and Leadership Xcelerator; do not default to AI-themed offerings when the evidence points elsewhere).
+
+DEPTH AND SOURCING REQUIREMENTS (both are strict, non-negotiable):
+- Each section should be substantial (aim for 120-300 words) and packed with specific, concrete, verifiable facts — names, dates, numbers, initiative names. If genuinely little is publicly findable on a section, say so plainly rather than padding with generic filler.
+- Cite EVERY factual claim inline with a bracketed number matching your source list, e.g. "launched a digital transformation initiative in 2024[2]". A sentence stating a specific fact with no citation attached is not acceptable — if you cannot find a source for a claim, do not include the claim.
+
+Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no extra text):
 {{
-  "signals_found": "Which signals apply and the specific evidence for each.",
-  "recent_developments": "Real recent news/initiatives/leadership context found through research.",
-  "competitive_position": "Where this company sits versus peers on the dimension the evidence actually supports.",
-  "meeting_talking_points": "2-3 concrete, specific points worth raising, each naming the specific real ALX offering that fits."
+  "signals_found": "Which signals apply and the specific evidence for each, inline-cited.",
+  "recent_developments": "Real recent news/initiatives/leadership/financial context found through research, inline-cited.",
+  "leadership_and_organization": "Key executives, ownership structure, and notable leadership changes, inline-cited.",
+  "competitive_position": "Where this company sits versus peers on the dimension the evidence actually supports, inline-cited.",
+  "meeting_talking_points": "3-4 concrete, specific points worth raising, each naming the specific real ALX offering that fits."
 }}"""
 
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a thorough enterprise account researcher. Return valid JSON only."},
+                {"role": "system", "content": "You are a thorough enterprise account researcher who digs deep across multiple sources and cites every claim. Return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.3
+            "temperature": 0.3,
+            "max_tokens": 4000
         }
 
+        data = None
         try:
-            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=45)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=90)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -194,15 +204,32 @@ Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no 
             return {
                 "signals_found": result.get("signals_found", "No specific signals identified."),
                 "recent_developments": result.get("recent_developments", "No recent public developments found."),
+                "leadership_and_organization": result.get("leadership_and_organization", "Not found."),
                 "competitive_position": result.get("competitive_position", f"{name} operates in {industry}."),
                 "meeting_talking_points": result.get("meeting_talking_points", ""),
                 "sources": _format_citations(data)
             }
         except Exception as e:
             logger.error(f"AI deep company research error for {name}: {e}")
+            if data is not None:
+                # The API call itself succeeded (so real citations exist) — only
+                # the model's JSON came back malformed. Losing the real research
+                # and sources entirely in that case would be worse than handing
+                # back the raw, unparsed text — so surface that instead of a
+                # fully generic placeholder.
+                raw_fallback = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return {
+                    "signals_found": raw_fallback or f"Research unavailable: {str(e)}",
+                    "recent_developments": "Structured parsing failed — see Signals Found for the full raw research output.",
+                    "leadership_and_organization": "Structured parsing failed — see Signals Found for the full raw research output.",
+                    "competitive_position": f"{name} operates in {industry} in {location}.",
+                    "meeting_talking_points": "Structured parsing failed — see Signals Found for the full raw research output.",
+                    "sources": _format_citations(data)
+                }
             return {
                 "signals_found": f"Research unavailable: {str(e)}",
                 "recent_developments": "Not available.",
+                "leadership_and_organization": "Not available.",
                 "competitive_position": f"{name} operates in {industry} in {location}.",
                 "meeting_talking_points": "Not available.",
                 "sources": ""
@@ -412,7 +439,7 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
         industry = company.get("industry", "Unknown")
         location = f"{company.get('city', '')}, {company.get('country', '')}".strip(", ") or "Morocco"
 
-        prompt = f"""You are a senior sales researcher for ALX Enterprise Morocco preparing deep, meeting-ready research on one specific contact ahead of a real meeting.
+        prompt = f"""You are a senior sales researcher for ALX Enterprise Morocco preparing EXHAUSTIVE, meeting-ready research on one specific contact ahead of a real meeting. This is a one-off deep dive on a single, deliberately chosen person — go as deep as real public information allows. Shallow, generic output is a failure here.
 
 OUR OFFERING:
 {offering_context}
@@ -425,19 +452,23 @@ TARGET CONTACT:
 
 TARGET COMPANY: {comp_name} ({industry}, {location})
 
-Perform real public web research on this specific person. Scope: their PROFESSIONAL public record only — career background, public statements, articles, interviews, conference talks, or blog posts that name them. Do NOT search for or report personal-life details (family, hobbies, personal social activity) even if something is technically discoverable — this is for professional meeting prep, not personal profiling.
+Research this person from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Scope: their PROFESSIONAL public record only — career background, education, public statements, articles, interviews, conference talks, panel appearances, podcast guest spots, bylined articles, quotes in press coverage or industry reports, awards/recognitions, and blog posts that name them. Do NOT search for or report personal-life details (family, hobbies, personal social activity) even if something is technically discoverable — this is for professional meeting prep, not personal profiling.
 
 Produce 5 sections:
-1. Professional background: career history, tenure, scope of responsibility, based on genuine research.
-2. Public presence: any real articles, interviews, quotes, conference appearances, or blog mentions naming this person, with enough detail to reference in conversation. If genuinely nothing is found, say so plainly rather than inventing something.
+1. Professional background: full career timeline with as much specificity as can be found (previous companies, roles, approximate years/tenure at each), education (degrees, institutions), and scope of responsibility in their current role — based on genuine research, not assumption.
+2. Public presence: EVERY real article, interview, quote, conference appearance, panel talk, podcast, bylined piece, or blog mention naming this person that you can find — list each one with enough specific detail (publication/venue, approximate date, topic) to actually reference in conversation. If genuinely nothing is found after real research, say so plainly rather than inventing something.
 3. Opening sales angle: judge whether this contact is closer to the "Karim" archetype (senior executive — lead with efficiency/ROI) or "Youssef" archetype (specialist/IC — lead with skill-building/growth) from OUR OFFERING, and write the angle in that register. Use the signal-to-offering table in OUR OFFERING to name the SPECIFIC real offering matching the evidence found — do NOT default to an AI-themed offering out of habit; the real catalog spans 4 equal Academy themes (Data Analytics is the largest, not AI), 6 named workshops, and the 6-month Leadership Xcelerator — pick whichever one the evidence actually points to, plus a real proof point.
 4. Company brief: which of the 8 organizational signals this company shows evidence of, which real ALX offering(s) actually fit that signal (per the signal-to-offering table), and the resulting training needs.
-5. Meeting prep note: one practical suggestion for how to open or steer a real conversation with this specific person, grounded in what was actually found about them.
+5. Meeting prep note: 2-3 practical, specific suggestions for how to open or steer a real conversation with this specific person, grounded in what was actually found about them (their background, public statements, or the company's situation) — not generic sales advice.
+
+DEPTH AND SOURCING REQUIREMENTS (both are strict, non-negotiable):
+- Sections 1 and 2 especially should be substantial (aim for 120-300 words each) and packed with specific, verifiable facts — names, dates, publication names, direct quotes where available. If little is genuinely publicly findable, say so plainly rather than padding with generic filler.
+- Cite EVERY factual claim inline with a bracketed number matching your source list, e.g. "quoted in a 2024 industry panel on digital banking[3]". A sentence stating a specific fact with no citation attached is not acceptable — if you cannot find a source for a claim, do not include the claim.
 
 Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no extra text):
 {{
-  "professional_background": "...",
-  "public_presence": "...",
+  "professional_background": "Full career timeline, education, and scope of responsibility, inline-cited.",
+  "public_presence": "Every real article/interview/talk/quote found, each with enough detail to reference, inline-cited.",
   "opening_sales_angle": "...",
   "company_brief": "...",
   "meeting_prep_note": "..."
@@ -446,14 +477,16 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a professional enterprise sales intelligence researcher. Stay strictly within someone's professional public record. Return valid JSON only."},
+                {"role": "system", "content": "You are a professional enterprise sales intelligence researcher who digs deep across multiple sources and cites every claim. Stay strictly within someone's professional public record. Return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.3
+            "temperature": 0.3,
+            "max_tokens": 4000
         }
 
+        data = None
         try:
-            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=45)
+            response = requests.post(self._url(), json=payload, headers=self._headers(), timeout=90)
             response.raise_for_status()
             data = response.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
@@ -472,6 +505,21 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
             }
         except Exception as e:
             logger.error(f"AI deep contact research error for {contact_name} at {comp_name}: {e}")
+            if data is not None:
+                # The API call itself succeeded (so real citations exist) — only
+                # the model's JSON came back malformed. Losing the real research
+                # and sources entirely in that case would be worse than handing
+                # back the raw, unparsed text — so surface that instead of a
+                # fully generic placeholder.
+                raw_fallback = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return {
+                    "professional_background": raw_fallback or f"{contact_name} serves as {contact_title} at {comp_name}.",
+                    "public_presence": "Structured parsing failed — see Professional Background for the full raw research output.",
+                    "opening_sales_angle": "Highlight ALX Enterprise corporate training bootcamps in Data, AI & Leadership.",
+                    "company_brief": f"{comp_name} ({industry}) operates in {location}.",
+                    "meeting_prep_note": "",
+                    "sources": _format_citations(data)
+                }
             return {
                 "professional_background": f"{contact_name} serves as {contact_title} at {comp_name}.",
                 "public_presence": "Research unavailable.",
