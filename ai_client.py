@@ -64,7 +64,7 @@ TASK:
    - "Review": genuinely ambiguous — unclear/very small size, an obscure or mixed-signal sector not covered by OUR OFFERING's research, or conflicting evidence.
    - "No-Go": clear evidence this isn't a fit (too small to plausibly have any structured L&D function, or a business type with no credible connection to any signal).
    Do not default to Review just because company-specific news wasn't found — use sector-level evidence and company characteristics instead. Do not default to Go purely on size with zero sector/signal relevance; do not default to No-Go purely for being a "traditional" sector. Give a single-sentence reason naming the SPECIFIC signal or evidence used.
-2. Suggest 3 to 5 ideal target job FUNCTIONS to reach out to, chosen from what's actually relevant given which signal(s) you found — use the workshop audiences in OUR OFFERING as a guide (e.g. an AI-governance-gap signal → transformation/digital leadership roles; a manager-readiness signal → HR/L&D and frontline management roles; a productivity/retention signal → HR and operations leadership; a decision-making signal → senior functional/financial leadership).
+2. Suggest 3 to 5 ideal target job FUNCTIONS to reach out to, chosen from what's actually relevant given which signal(s) you found — use the signal-to-offering table in OUR OFFERING as a guide (e.g. an AI-governance-gap signal → transformation/digital leadership roles; a manager-readiness or retention signal → HR/L&D and people leadership roles; an innovation-capacity signal → strategy/business development/product leadership roles; a productivity/execution signal → operations leadership; a decision-making signal → senior functional/financial leadership). Do not let AI-related signals crowd out the others — most real companies' evidence points to a mix.
 
 Respond strictly with valid JSON with these 3 keys (no markdown code blocks, no extra text):
 {{
@@ -146,15 +146,15 @@ TARGET COMPANY:
 Perform real public web research on this specific company. Produce a genuine, detailed dossier — not generic filler — covering:
 1. Which of the 8 organizational signals from OUR OFFERING this company shows real evidence of (company-specific news/initiatives where findable, sector-level evidence otherwise), and why that matters for them specifically.
 2. Recent developments: news, initiatives, leadership changes, expansions, or public strategic statements from the last 1-2 years.
-3. Competitive/industry position: where this company sits versus peers in digital/AI adoption.
-4. Concrete, meeting-ready talking points: 2-3 specific things worth raising in a real conversation with this company, tied to what was actually found.
+3. Competitive/industry position: where this company sits versus peers — cover whichever dimension the evidence actually supports (digital/AI maturity, operational execution, talent/retention, innovation capacity, data-driven decision-making), not only digital/AI.
+4. Concrete, meeting-ready talking points: 2-3 specific things worth raising in a real conversation with this company, each tied to what was actually found AND naming the specific real ALX offering that fits (using the signal-to-offering table in OUR OFFERING — the real catalog spans 4 equal Academy themes, 6 workshops, and Leadership Xcelerator; do not default to AI-themed offerings when the evidence points elsewhere).
 
 Respond strictly with valid JSON with these 4 keys (no markdown code blocks, no extra text):
 {{
   "signals_found": "Which signals apply and the specific evidence for each.",
   "recent_developments": "Real recent news/initiatives/leadership context found through research.",
-  "competitive_position": "Where this company sits in its industry's digital/AI adoption curve.",
-  "meeting_talking_points": "2-3 concrete, specific points worth raising in a real conversation with this company."
+  "competitive_position": "Where this company sits versus peers on the dimension the evidence actually supports.",
+  "meeting_talking_points": "2-3 concrete, specific points worth raising, each naming the specific real ALX offering that fits."
 }}"""
 
         payload = {
@@ -233,7 +233,7 @@ REAL ROSTER OF PEOPLE APOLLO HAS ON FILE AT THIS COMPANY (first name + job title
 {roster_text}
 
 TASK:
-Select up to {max_selections} people from this REAL roster who are the best targets for our offering. Match each person's real title to the workshop audiences and buyer personas described in OUR OFFERING (e.g. a Director of Operations or functional exec is a "Karim"-type budget-holder worth prioritizing; an HR/L&D lead is a likely programme owner; a Digital/Transformation lead fits the AI Strategic Roadmap audience; a frontline manager fits Lead & Manage in the Age of AI). Prioritize genuine decision-makers and functional fits over generic seniority. Only select from the numbered roster above — do not invent people or renumber them. If fewer than {max_selections} are good fits, select fewer.
+Select up to {max_selections} people from this REAL roster who are the best targets for our offering. Match each person's real title to the workshop audiences and buyer personas described in OUR OFFERING (e.g. a Director of Operations or functional exec is a "Karim"-type budget-holder worth prioritizing; an HR/L&D lead is a likely programme owner for retention/leadership signals; a Digital/Transformation lead fits the AI Strategic Roadmap audience; a frontline manager fits Lead & Manage in the Age of AI; a strategy/business-development/product lead fits the Innovation & Business theme; a finance/BI/analytics lead fits Decision Intelligence or the Data Analytics theme). Prioritize genuine decision-makers and functional fits over generic seniority — do not default to Digital/IT roles out of habit when the roster has an equally or more relevant fit elsewhere. Only select from the numbered roster above — do not invent people or renumber them. If fewer than {max_selections} are good fits, select fewer.
 
 Respond strictly with valid JSON (no markdown code blocks, no extra text):
 {{
@@ -324,7 +324,7 @@ TARGET COMPANY DETAILS:
 
 Perform public web research on this contact and company to produce 4 detailed, high-value sales briefing sections.
 
-For the opening_sales_angle specifically: first judge whether this contact is closer to the "Karim" archetype (senior operational/functional executive — lead with efficiency/ROI, fast measurable payback, skip generic upskilling language) or the "Youssef" archetype (functional specialist/individual contributor — lead with practical skill-building and career growth) from OUR OFFERING above, and write the angle in that register. Name the SPECIFIC relevant offering (e.g. the "AI Strategic Roadmap" workshop, the "Decision Intelligence" workshop, or the Academy) rather than generic "training", and cite one real proof point (a stat or named client reference from OUR OFFERING) rather than a generic claim.
+For the opening_sales_angle specifically: first judge whether this contact is closer to the "Karim" archetype (senior operational/functional executive — lead with efficiency/ROI, fast measurable payback, skip generic upskilling language) or the "Youssef" archetype (functional specialist/individual contributor — lead with practical skill-building and career growth) from OUR OFFERING above, and write the angle in that register. Use the signal-to-offering table in OUR OFFERING to name the SPECIFIC real offering that matches the evidence found — this spans 4 equal Academy themes (AI, Data Analytics — the largest catalog, Leadership & Management, Innovation & Business), 6 named workshops, and the 6-month Leadership Xcelerator program. Do NOT default to an AI-themed offering out of habit — most companies' real evidence points elsewhere (retention, execution friction, innovation capacity, data-driven decisions), and the pitch should reflect whichever theme the evidence actually shows, not the most familiar one. Cite one real proof point (a stat or named client reference from OUR OFFERING) rather than a generic claim.
 
 Respond strictly in valid JSON format with these 4 keys (no markdown code blocks, no extra text):
 {{
@@ -411,8 +411,8 @@ Perform real public web research on this specific person. Scope: their PROFESSIO
 Produce 5 sections:
 1. Professional background: career history, tenure, scope of responsibility, based on genuine research.
 2. Public presence: any real articles, interviews, quotes, conference appearances, or blog mentions naming this person, with enough detail to reference in conversation. If genuinely nothing is found, say so plainly rather than inventing something.
-3. Opening sales angle: judge whether this contact is closer to the "Karim" archetype (senior executive — lead with efficiency/ROI) or "Youssef" archetype (specialist/IC — lead with skill-building/growth) from OUR OFFERING, and write the angle in that register, naming a specific real ALX offering and a real proof point.
-4. Company brief: which of the 8 organizational signals this company shows evidence of, and the resulting training needs.
+3. Opening sales angle: judge whether this contact is closer to the "Karim" archetype (senior executive — lead with efficiency/ROI) or "Youssef" archetype (specialist/IC — lead with skill-building/growth) from OUR OFFERING, and write the angle in that register. Use the signal-to-offering table in OUR OFFERING to name the SPECIFIC real offering matching the evidence found — do NOT default to an AI-themed offering out of habit; the real catalog spans 4 equal Academy themes (Data Analytics is the largest, not AI), 6 named workshops, and the 6-month Leadership Xcelerator — pick whichever one the evidence actually points to, plus a real proof point.
+4. Company brief: which of the 8 organizational signals this company shows evidence of, which real ALX offering(s) actually fit that signal (per the signal-to-offering table), and the resulting training needs.
 5. Meeting prep note: one practical suggestion for how to open or steer a real conversation with this specific person, grounded in what was actually found about them.
 
 Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no extra text):
