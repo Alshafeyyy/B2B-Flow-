@@ -11,13 +11,6 @@ APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "")
 LLM_GATEWAY_API_KEY = os.getenv("LLM_GATEWAY_API_KEY", "")
 LLM_GATEWAY_BASE_URL = os.getenv("LLM_GATEWAY_BASE_URL", "https://api.llmgateway.io/v1")
 
-# Optional: a Google Cloud service account's JSON key (as a single-line/triple-
-# quoted string), used only for the "Open in Google Sheets" button — lets a run's
-# output be uploaded straight to Sheets instead of downloaded and reopened by
-# hand. Entirely optional; the app works fine without it, that button just shows
-# a setup error if clicked while this is empty.
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-
 # Used for qualification + all deep research (needs real-time web search): Perplexity
 # sonar, $1/$1 per M tokens + a flat $0.005/request. Kept off sonar-pro deliberately —
 # 15x pricier on output for a quality delta that isn't worth roughly halving how many
