@@ -426,6 +426,8 @@ with tab_deep_dive:
             st.session_state.pd_company = None
         if "pd_candidates" not in st.session_state:
             st.session_state.pd_candidates = []
+        if "pd_manual_company" not in st.session_state:
+            st.session_state.pd_manual_company = None
 
         # Step 1: search. Needs BOTH the company and the person's name — Apollo's
         # people search by name alone (no company context) returns far too many
@@ -454,13 +456,19 @@ with tab_deep_dive:
                     pd_result = search_person_candidates(pd_company_query.strip(), pd_person_query.strip(), limit=5)
                 st.session_state.pd_company = pd_result["company"]
                 st.session_state.pd_candidates = pd_result["candidates"]
+                st.session_state.pd_manual_company = None
 
                 if not pd_result["company"]:
                     st.warning(f"No company found matching \"{pd_company_query}\" — try a different spelling or the website domain instead.")
                 elif not pd_result["candidates"]:
-                    st.warning(
+                    # The company is real and resolved, but this specific person
+                    # isn't in Apollo's roster of it — rather than a dead end, let
+                    # the user hand-supply what they know below so the AI can
+                    # still research them directly.
+                    st.session_state.pd_manual_company = pd_result["company"]
+                    st.info(
                         f"Found {pd_result['company'].get('name')}, but no one matching \"{pd_person_query}\" "
-                        "on file there — check the spelling, or try just their first name."
+                        "on file there. Enter what you know about them below and I'll research them directly."
                     )
 
         # Step 2: confirm which real match is the right person. Shows which company
@@ -531,3 +539,87 @@ with tab_deep_dive:
                             [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
                             width="stretch"
                         )
+
+        # Step 2b: fallback for when the company was resolved but this specific
+        # person isn't in Apollo's roster at all — hand-supplied details instead
+        # of a dead end. No Apollo `id` on this dict, so bulk_enrich_people skips
+        # enrichment gracefully and deep_contact_research researches purely from
+        # what's typed here (plus additional_context as an extra search hint).
+        if st.session_state.pd_manual_company and not st.session_state.pd_candidates:
+            with st.form("pd_manual_form"):
+                manual_comp_name = st.session_state.pd_manual_company.get("name", "the company")
+                st.markdown(
+                    f'<div class="alx-card-title">✍️ Not on file at {manual_comp_name} — enter what you know</div>',
+                    unsafe_allow_html=True
+                )
+                pd_manual_name = st.text_input("Full name*", value="", key="pd_manual_name")
+                pd_manual_title = st.text_input("Job title / role (optional)", value="", key="pd_manual_title")
+                pd_manual_email = st.text_input("Email (optional)", value="", key="pd_manual_email")
+                pd_manual_linkedin = st.text_input("LinkedIn profile URL (optional)", value="", key="pd_manual_linkedin")
+                pd_manual_context = st.text_area(
+                    "Anything else that helps find them (optional)",
+                    value="",
+                    placeholder="e.g. \"previously at X company\", goes by a nickname, a specific department or region...",
+                    key="pd_manual_context"
+                )
+                pd_manual_submitted = st.form_submit_button("Research This Person", type="primary")
+
+            if pd_manual_submitted:
+                if not pd_manual_name.strip():
+                    st.warning("Enter at least their full name.")
+                else:
+                    manual_person = {"name": pd_manual_name.strip()}
+                    if pd_manual_title.strip():
+                        manual_person["title"] = pd_manual_title.strip()
+                    if pd_manual_email.strip():
+                        manual_person["email"] = pd_manual_email.strip()
+                    if pd_manual_linkedin.strip():
+                        manual_person["linkedin_url"] = pd_manual_linkedin.strip()
+                    if pd_manual_context.strip():
+                        manual_person["additional_context"] = pd_manual_context.strip()
+
+                    with st.status(f"Researching {pd_manual_name.strip()}...", expanded=True) as status:
+                        def on_progress(msg: str):
+                            status.write(msg)
+
+                        try:
+                            result = run_person_deep_dive(
+                                company_raw=st.session_state.pd_manual_company,
+                                person_raw=manual_person,
+                                output_path=f"deepdive_person_{pd_manual_name.strip().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                on_progress=on_progress
+                            )
+                        except Exception as e:
+                            status.update(label=f"Failed: {e}", state="error")
+                            st.error(
+                                "The run stopped before finishing, but everything completed up to that point "
+                                "was already saved — reload this page and check **Previous run files** above."
+                            )
+                            st.stop()
+
+                        status.update(label="Research complete", state="complete")
+
+                    if not result["output_path"]:
+                        st.warning(f"Couldn't retrieve full details for \"{pd_manual_name.strip()}\" — try again.")
+                    else:
+                        contacts = result["contacts"]
+
+                        st.subheader("Summary")
+                        c1, c2 = st.columns(2)
+                        c1.metric("Company", result["company"]["Company Name"])
+                        c2.metric("Contact", contacts[0]["Contact Name"] if contacts else "N/A")
+
+                        with open(result["output_path"], "rb") as f:
+                            st.download_button(
+                                "⬇️ Download Excel Workbook",
+                                data=f.read(),
+                                file_name=os.path.basename(result["output_path"]),
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                type="primary"
+                            )
+
+                        if contacts:
+                            st.dataframe(
+                                [{"Contact": c["Contact Name"], "Title": c["Job Title"], "Email": c["Email"]} for c in contacts],
+                                width="stretch"
+                            )

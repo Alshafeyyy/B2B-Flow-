@@ -444,10 +444,22 @@ Respond strictly in valid JSON format with these 4 keys (no markdown code blocks
         contact_title = contact.get("title", "Executive")
         contact_linkedin = contact.get("linkedin_url", "")
         contact_headline = contact.get("headline", "")
+        contact_email = contact.get("email", "")
+        # Only set for a person entered manually (not found in Apollo's roster —
+        # see run_person_deep_dive / the app's manual-entry fallback form): extra
+        # user-supplied hints (a former employer, a nickname, anything that helps
+        # disambiguate a common name) to ground the search since there's no Apollo
+        # record to anchor it.
+        additional_context = contact.get("additional_context", "")
 
         comp_name = company.get("name", "Unknown Company")
         industry = company.get("industry", "Unknown")
         location = f"{company.get('city', '')}, {company.get('country', '')}".strip(", ") or "Morocco"
+
+        additional_context_block = (
+            f"\nADDITIONAL CONTEXT PROVIDED BY THE USER (use this to help find and confirm you have the right person, especially if the name is common):\n{additional_context}\n"
+            if additional_context.strip() else ""
+        )
 
         prompt = f"""You are a senior sales researcher for ALX Enterprise Morocco preparing EXHAUSTIVE, meeting-ready research on one specific contact ahead of a real meeting. This is a one-off deep dive on a single, deliberately chosen person — go as deep as real public information allows. Shallow, generic output is a failure here.
 
@@ -459,10 +471,11 @@ TARGET CONTACT:
 - Job Title: {contact_title}
 - Headline/Summary: {contact_headline}
 - LinkedIn: {contact_linkedin}
-
+- Email: {contact_email}
+{additional_context_block}
 TARGET COMPANY: {comp_name} ({industry}, {location})
 
-Research this person from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Scope: their PROFESSIONAL public record only — career background, education, public statements, articles, interviews, conference talks, panel appearances, podcast guest spots, bylined articles, quotes in press coverage or industry reports, awards/recognitions, and blog posts that name them. Do NOT search for or report personal-life details (family, hobbies, personal social activity) even if something is technically discoverable — this is for professional meeting prep, not personal profiling.
+Research this person from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Scope: their PROFESSIONAL public record only — career background, education, public statements, articles, interviews, conference talks, panel appearances, podcast guest spots, bylined articles, quotes in press coverage or industry reports, awards/recognitions, and blog posts that name them. Do NOT search for or report personal-life details (family, hobbies, personal social activity) even if something is technically discoverable — this is for professional meeting prep, not personal profiling. If a LinkedIn URL was provided above, use it to confirm you have the right person before relying on other search results with the same name.
 
 Produce 5 sections:
 1. Professional background: full career timeline with as much specificity as can be found (previous companies, roles, approximate years/tenure at each), education (degrees, institutions), and scope of responsibility in their current role — based on genuine research, not assumption.
