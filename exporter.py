@@ -84,7 +84,7 @@ def export_pipeline_to_excel(
             for col in ws.columns:
                 col_letter = get_column_letter(col[0].column)
                 header_name = str(col[0].value or "")
-                if any(k in header_name for k in ["Brief", "Angle", "Insights", "Position", "Roles", "Sources", "Organization", "Developments", "Points", "Presence", "Background", "Controversies"]):
+                if any(k in header_name for k in ["Brief", "Angle", "Insights", "Position", "Roles", "Sources", "Organization", "Developments", "Points", "Presence", "Background", "Controversies", "Overview"]):
                     ws.column_dimensions[col_letter].width = 45
                 elif "Reason" in header_name or "Description" in header_name:
                     ws.column_dimensions[col_letter].width = 35

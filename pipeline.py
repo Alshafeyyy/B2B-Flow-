@@ -427,6 +427,7 @@ def run_company_deep_dive(
         "Location": location,
         "Website": website,
         "Company Description": short_desc,
+        "Company Overview": dossier.get("company_overview", ""),
         "Signals Found": dossier.get("signals_found", ""),
         "Recent Developments": dossier.get("recent_developments", ""),
         "Leadership & Organization": dossier.get("leadership_and_organization", ""),
