@@ -158,24 +158,26 @@ TARGET COMPANY:
 - Website: {website}
 - Description: {short_desc}
 
-Research this company from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Actively look into: recent company news and press coverage, financial results/performance if public, leadership team and any recent executive moves, hiring patterns and job postings, digital/technology/AI initiatives, public strategic statements or interviews from executives, industry/analyst reports that mention them, partnerships or major clients, awards or recognitions, and anything notable from the last 2-3 years specifically.
+Research this company from MULTIPLE distinct angles before writing anything — do not settle for a single search pass. Actively look into: recent company news and press coverage (positive AND negative), financial results/performance if public, leadership team and any recent executive moves, hiring patterns and job postings, digital/technology/AI initiatives, public strategic statements or interviews from executives, industry/analyst reports that mention them, partnerships or major clients, awards or recognitions, and anything notable from the last 2-3 years specifically. This is comprehensive company intelligence, not just sales-friendly talking points — report EVERYTHING genuinely findable about this company, good or bad. Do not filter out or soften negative findings because this is meeting prep; knowing about a lawsuit, a regulatory fine, a public controversy, financial trouble, layoffs, or customer complaints is exactly as valuable as positive news — arguably more so, since walking into a meeting unaware of a live controversy is a real risk.
 
 Produce a genuine, detailed dossier covering:
 1. Which of the 8 organizational signals from OUR OFFERING this company shows real evidence of (company-specific news/initiatives where findable, sector-level evidence otherwise), and why that matters for them specifically.
 2. Recent developments: news, initiatives, leadership changes, expansions, financial results, or public strategic statements from the last 2-3 years — be specific with dates, numbers, and names, not vague summaries.
 3. Leadership & organizational context: key executives (names and titles where findable), ownership structure (public/private/family-owned/PE-backed/state-owned), and any notable recent leadership hires or departures.
-4. Competitive/industry position: where this company sits versus peers — cover whichever dimension the evidence actually supports (digital/AI maturity, operational execution, talent/retention, innovation capacity, data-driven decision-making), not only digital/AI.
-5. Concrete, meeting-ready talking points: 3-4 specific things worth raising in a real conversation with this company, each tied to what was actually found AND naming the specific real ALX offering that fits (using the signal-to-offering table in OUR OFFERING — the real catalog spans 4 equal Academy themes, 6 workshops, and Leadership Xcelerator; do not default to AI-themed offerings when the evidence points elsewhere).
+4. Risks & controversies: anything negative or reputationally significant — lawsuits, regulatory action or fines, public controversies or scandals, financial difficulties or profit warnings, layoffs or restructuring, customer complaints or negative press, criticism from analysts or media, labor disputes. Search for this as actively as for positive news. If a genuine, thorough search turns up nothing negative, say so plainly ("no significant controversies or negative coverage found") rather than inventing something or leaving this section thin without saying why.
+5. Competitive/industry position: where this company sits versus peers — cover whichever dimension the evidence actually supports (digital/AI maturity, operational execution, talent/retention, innovation capacity, data-driven decision-making), not only digital/AI.
+6. Concrete, meeting-ready talking points: 3-4 specific things worth raising in a real conversation with this company, each tied to what was actually found AND naming the specific real ALX offering that fits (using the signal-to-offering table in OUR OFFERING — the real catalog spans 4 equal Academy themes, 6 workshops, and Leadership Xcelerator; do not default to AI-themed offerings when the evidence points elsewhere).
 
 DEPTH AND SOURCING REQUIREMENTS (both are strict, non-negotiable):
 - Each section should be substantial (aim for 120-300 words) and packed with specific, concrete, verifiable facts — names, dates, numbers, initiative names. If genuinely little is publicly findable on a section, say so plainly rather than padding with generic filler.
 - Cite EVERY factual claim inline with a bracketed number matching your source list, e.g. "launched a digital transformation initiative in 2024[2]". A sentence stating a specific fact with no citation attached is not acceptable — if you cannot find a source for a claim, do not include the claim.
 
-Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no extra text):
+Respond strictly with valid JSON with these 6 keys (no markdown code blocks, no extra text):
 {{
   "signals_found": "Which signals apply and the specific evidence for each, inline-cited.",
   "recent_developments": "Real recent news/initiatives/leadership/financial context found through research, inline-cited.",
   "leadership_and_organization": "Key executives, ownership structure, and notable leadership changes, inline-cited.",
+  "risks_and_controversies": "Lawsuits, regulatory issues, controversies, financial trouble, layoffs, negative press — or an explicit statement that none were found, inline-cited.",
   "competitive_position": "Where this company sits versus peers on the dimension the evidence actually supports, inline-cited.",
   "meeting_talking_points": "3-4 concrete, specific points worth raising, each naming the specific real ALX offering that fits."
 }}"""
@@ -183,11 +185,11 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a thorough enterprise account researcher who digs deep across multiple sources and cites every claim. Return valid JSON only."},
+                {"role": "system", "content": "You are a thorough enterprise account researcher who digs deep across multiple sources, reports negative findings as readily as positive ones, and cites every claim. Return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 4000
+            "max_tokens": 8000
         }
 
         data = None
@@ -205,6 +207,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 "signals_found": result.get("signals_found", "No specific signals identified."),
                 "recent_developments": result.get("recent_developments", "No recent public developments found."),
                 "leadership_and_organization": result.get("leadership_and_organization", "Not found."),
+                "risks_and_controversies": result.get("risks_and_controversies", "Not found."),
                 "competitive_position": result.get("competitive_position", f"{name} operates in {industry}."),
                 "meeting_talking_points": result.get("meeting_talking_points", ""),
                 "sources": _format_citations(data)
@@ -222,6 +225,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                     "signals_found": raw_fallback or f"Research unavailable: {str(e)}",
                     "recent_developments": "Structured parsing failed — see Signals Found for the full raw research output.",
                     "leadership_and_organization": "Structured parsing failed — see Signals Found for the full raw research output.",
+                    "risks_and_controversies": "Structured parsing failed — see Signals Found for the full raw research output.",
                     "competitive_position": f"{name} operates in {industry} in {location}.",
                     "meeting_talking_points": "Structured parsing failed — see Signals Found for the full raw research output.",
                     "sources": _format_citations(data)
@@ -230,6 +234,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 "signals_found": f"Research unavailable: {str(e)}",
                 "recent_developments": "Not available.",
                 "leadership_and_organization": "Not available.",
+                "risks_and_controversies": "Not available.",
                 "competitive_position": f"{name} operates in {industry} in {location}.",
                 "meeting_talking_points": "Not available.",
                 "sources": ""
@@ -481,7 +486,7 @@ Respond strictly with valid JSON with these 5 keys (no markdown code blocks, no 
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 4000
+            "max_tokens": 6000
         }
 
         data = None

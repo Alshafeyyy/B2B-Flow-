@@ -430,6 +430,7 @@ def run_company_deep_dive(
         "Signals Found": dossier.get("signals_found", ""),
         "Recent Developments": dossier.get("recent_developments", ""),
         "Leadership & Organization": dossier.get("leadership_and_organization", ""),
+        "Risks & Controversies": dossier.get("risks_and_controversies", ""),
         "Competitive Position": dossier.get("competitive_position", ""),
         "Meeting Talking Points": dossier.get("meeting_talking_points", ""),
         "Sources": dossier.get("sources", "")
